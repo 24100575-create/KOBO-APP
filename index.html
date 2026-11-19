@@ -83,6 +83,16 @@
         const EXTERNAL_FB_STORAGE_KEY = 'kobo_bowling_external_firebase_config_v1';
         const LOCAL_CLUB_STORAGE_KEY = 'kobo_bowling_local_club_data_v1';
 
+        const DEFAULT_EMBEDDED_FIREBASE_CONFIG = {
+          apiKey: "AIzaSyCsnZeDwQJ3AO14hQ2Lb1PegPcpOHZ1iMk",
+          authDomain: "kobo-parkminwoo.firebaseapp.com",
+          projectId: "kobo-parkminwoo",
+          storageBucket: "kobo-parkminwoo.firebasestorage.app",
+          messagingSenderId: "574875572101",
+          appId: "1:574875572101:web:71dbe7f149a550a1a496ec",
+          measurementId: "G-RW217TEQPL"
+        };
+
         function resolveFirebaseConfig() {
           try {
             if (typeof __firebase_config !== 'undefined' && __firebase_config) {
@@ -97,15 +107,7 @@
               if (saved) return JSON.parse(saved);
             }
           } catch (err) {}
-          return {
-  apiKey: "AIzaSyCsnZeDwQJ3AO14hQ2Lb1PegPcpOHZ1iMk",
-  authDomain: "kobo-parkminwoo.firebaseapp.com",
-  projectId: "kobo-parkminwoo",
-  storageBucket: "kobo-parkminwoo.firebasestorage.app",
-  messagingSenderId: "574875572101",
-  appId: "1:574875572101:web:71dbe7f149a550a1a496ec",
-  measurementId: "G-RW217TEQPL"
-};
+          return DEFAULT_EMBEDDED_FIREBASE_CONFIG;
         }
 
         const activeFirebaseConfig = resolveFirebaseConfig();
@@ -284,6 +286,13 @@
           const [vicePresidentPhone, setVicePresidentPhone] = useState('');
 
           const [showAdminSettingsModal, setShowAdminSettingsModal] = useState(false);
+          const [externalFbInput, setExternalFbInput] = useState(() => {
+            try {
+              return localStorage.getItem(EXTERNAL_FB_STORAGE_KEY) || '';
+            } catch (e) {
+              return '';
+            }
+          });
           const [currentPinInput, setCurrentPinInput] = useState('');
           const [newPinInput, setNewPinInput] = useState('');
           const [confirmPinInput, setConfirmPinInput] = useState('');
@@ -654,50 +663,6 @@
             [allTimeStats]
           );
 
-          const handleApplyRecommendedAvg = (memberId, newBaseAvg, directionLabel = '상향') => {
-            if (!isAdmin) return;
-            const autoHandi = Math.max(0, Math.round((200 - newBaseAvg) * 0.8));
-            const currentGames = allTimeStats.find((s) => s.id === memberId)?.totalGames || 0;
-            const nextMembers = members.map((m) =>
-              m.id === memberId
-                ? {
-                    ...m,
-                    baseAvg: newBaseAvg,
-                    handicap: autoHandi,
-                    avgAdjustedAtGames: currentGames,
-                  }
-                : m
-            );
-            setMembers(nextMembers);
-            syncClubStateToCloud({ members: nextMembers });
-            showToast(`기준 에버 ${newBaseAvg}점(핸디 +${autoHandi})으로 ${directionLabel} 조정되었습니다.`);
-          };
-
-          const handleLogoUpload = (e) => {
-            const file = e.target.files?.[0];
-            if (!file) return;
-            const reader = new FileReader();
-            reader.onload = () => {
-              const img = new Image();
-              img.onload = () => {
-                const canvas = document.createElement('canvas');
-                const size = 160;
-                canvas.width = size;
-                canvas.height = size;
-                const ctx = canvas.getContext('2d');
-                if (ctx) {
-                  ctx.drawImage(img, 0, 0, size, size);
-                  const compressed = canvas.toDataURL('image/png', 0.9);
-                  setClubLogo(compressed);
-                  syncClubStateToCloud({ clubLogo: compressed });
-                  showToast('KOBO 클럽 로고가 변경되었습니다.');
-                }
-              };
-              img.src = reader.result;
-            };
-            reader.readAsDataURL(file);
-          };
-
           const handlePinSubmit = (e) => {
             e.preventDefault();
             if (pinInput === adminPin) {
@@ -709,6 +674,33 @@
             } else {
               setPinError('비밀번호가 일치하지 않습니다.');
             }
+          };
+
+          const handleLogoUpload = (e) => {
+            const file = e.target.files && e.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = () => {
+              const img = new Image();
+              img.onload = () => {
+                const size = 160;
+                const canvas = document.createElement('canvas');
+                canvas.width = size;
+                canvas.height = size;
+                const ctx = canvas.getContext('2d');
+                if (!ctx) return;
+                const minSide = Math.min(img.width, img.height);
+                const sx = (img.width - minSide) / 2;
+                const sy = (img.height - minSide) / 2;
+                ctx.drawImage(img, sx, sy, minSide, minSide, 0, 0, size, size);
+                const dataUrl = canvas.toDataURL('image/png', 0.9);
+                setClubLogo(dataUrl);
+                syncClubStateToCloud({ clubLogo: dataUrl });
+                showToast('클럽 로고가 업데이트되었습니다.');
+              };
+              img.src = reader.result;
+            };
+            reader.readAsDataURL(file);
           };
 
           const handleChangeAdminPin = (e) => {
@@ -727,17 +719,242 @@
             }
             setAdminPin(newPinInput);
             syncClubStateToCloud({ adminPin: newPinInput });
-            setShowAdminSettingsModal(false);
+            setCurrentPinInput('');
+            setNewPinInput('');
+            setConfirmPinInput('');
+            setPinChangeError('');
             showToast('임원진 비밀번호가 변경되었습니다.');
           };
 
-          // 새 학기 초기화 및 이전 학기 아카이브 보관
+          const handleSaveExternalFbConfig = () => {
+            const raw = externalFbInput.trim();
+            if (!raw) {
+              try {
+                localStorage.removeItem(EXTERNAL_FB_STORAGE_KEY);
+              } catch (e) {}
+              showToast('클라우드 설정이 초기화되었습니다. 새로고침 후 적용됩니다.');
+              return;
+            }
+            try {
+              const match = raw.match(/\{[\s\S]*\}/);
+              const objStr = match ? match[0] : raw;
+              const normalized = objStr.replace(/([{,]\s*)([a-zA-Z0-9_]+)\s*:/g, '$1"$2":');
+              const parsed = JSON.parse(normalized);
+              if (!parsed || !parsed.apiKey) {
+                showToast('올바른 Firebase 설정 코드(apiKey 포함)를 붙여넣어 주세요.');
+                return;
+              }
+              localStorage.setItem(EXTERNAL_FB_STORAGE_KEY, JSON.stringify(parsed));
+              showToast('클라우드 설정이 저장되었습니다! 새로고침하면 실시간 동기화됩니다.');
+            } catch (err) {
+              showToast('설정 코드 형식을 인식할 수 없습니다. 중괄호 { ... } 부분을 복사해주세요.');
+            }
+          };
+
+          const handleApplyRecommendedAvg = (memberId, newAvg, directionLabel) => {
+            if (!isAdmin) return;
+            const targetStat = allTimeStats.find((s) => s.id === memberId);
+            const currentGames = targetStat ? targetStat.totalGames : 0;
+            const autoHandi = Math.max(0, Math.round((200 - newAvg) * 0.8));
+            const nextMembers = members.map((m) =>
+              m.id === memberId
+                ? { ...m, baseAvg: newAvg, handicap: autoHandi, avgAdjustedAtGames: currentGames }
+                : m
+            );
+            setMembers(nextMembers);
+            syncClubStateToCloud({ members: nextMembers });
+            showToast(`기준 에버 ${newAvg}점(핸디 +${autoHandi})으로 ${directionLabel} 조정되었습니다.`);
+          };
+
+          const handleAddMember = (e) => {
+            e.preventDefault();
+            if (!isAdmin || !newMemberName.trim()) return;
+            const id = `m_${Date.now()}`;
+            const created = {
+              id,
+              name: newMemberIsGuest ? `${newMemberName.trim()}(게스트)` : newMemberName.trim(),
+              baseAvg: Number(newMemberAvg) || 150,
+              handicap: Number(newMemberHandicap) || 0,
+              isGuest: newMemberIsGuest,
+              status: 'active',
+            };
+            const nextMembers = [...members, created];
+            const nextSessions = sessions.map((sess) =>
+              sess.id === currentSession.id
+                ? {
+                    ...sess,
+                    records: [...sess.records, { memberId: id, scores: [0, 0], shoeRental: false }],
+                  }
+                : sess
+            );
+            setMembers(nextMembers);
+            setSessions(nextSessions);
+            syncClubStateToCloud({ members: nextMembers, sessions: nextSessions });
+            setNewMemberName('');
+            setNewMemberAvg(150);
+            setNewMemberHandicap(30);
+            setNewMemberIsGuest(false);
+            setShowAddMember(false);
+            showToast(`${created.name} 회원이 등록되었습니다.`);
+          };
+
+          const handleToggleDormantMember = (memberId) => {
+            if (!isAdmin) return;
+            const target = members.find((m) => m.id === memberId);
+            if (!target) return;
+            const nextStatus = target.status === 'dormant' ? 'active' : 'dormant';
+            const nextMembers = members.map((m) =>
+              m.id === memberId ? { ...m, status: nextStatus } : m
+            );
+            setMembers(nextMembers);
+            if (nextStatus === 'dormant') {
+              const nextSessions = sessions.map((sess) => {
+                if (sess.id !== currentSession.id) return sess;
+                const cleanedLanes = { ...createEmptyLanes(), ...(sess.lanes || {}) };
+                for (let i = 1; i <= TOTAL_LANES; i += 1) {
+                  cleanedLanes[i] = (cleanedLanes[i] || [null, null, null, null]).map((id) =>
+                    id === memberId ? null : id
+                  );
+                }
+                return {
+                  ...sess,
+                  lanes: cleanedLanes,
+                  records: sess.records.filter((r) => r.memberId !== memberId),
+                };
+              });
+              setSessions(nextSessions);
+              syncClubStateToCloud({ members: nextMembers, sessions: nextSessions });
+              showToast(`${target.name} 회원이 휴면 전환되었습니다.`);
+            } else {
+              syncClubStateToCloud({ members: nextMembers });
+              showToast(`${target.name} 회원이 활동중으로 복귀했습니다.`);
+            }
+          };
+
+          const handleConfirmDeleteMember = () => {
+            if (!isAdmin || !deleteTargetMember) return;
+            const targetId = deleteTargetMember.id;
+            const targetName = deleteTargetMember.name;
+            const nextMembers = members.filter((m) => m.id !== targetId);
+            const nextSessions = sessions.map((sess) => {
+              const cleanedLanes = { ...createEmptyLanes(), ...(sess.lanes || {}) };
+              for (let i = 1; i <= TOTAL_LANES; i += 1) {
+                cleanedLanes[i] = (cleanedLanes[i] || [null, null, null, null]).map((id) =>
+                  id === targetId ? null : id
+                );
+              }
+              return {
+                ...sess,
+                lanes: cleanedLanes,
+                records: sess.records.filter((r) => r.memberId !== targetId),
+              };
+            });
+            setMembers(nextMembers);
+            setSessions(nextSessions);
+            syncClubStateToCloud({ members: nextMembers, sessions: nextSessions });
+            setDeleteTargetMember(null);
+            showToast(`${targetName} 회원이 영구 삭제되었습니다.`);
+          };
+
+          const updateMemberField = (memberId, field, value) => {
+            if (!isAdmin) return;
+            const nextMembers = members.map((m) => (m.id === memberId ? { ...m, [field]: value } : m));
+            setMembers(nextMembers);
+            syncClubStateToCloud({ members: nextMembers });
+          };
+
+          const handleConfirmDeleteSemester = () => {
+            if (role !== 'admin' || !deleteTargetSemester) return;
+            const targetId = deleteTargetSemester.id;
+            const targetName = deleteTargetSemester.name;
+            const nextArchived = archivedSemesters.filter((sem) => sem.id !== targetId);
+            setArchivedSemesters(nextArchived);
+            if (selectedSemesterId === targetId) setSelectedSemesterId('current');
+            syncClubStateToCloud({ archivedSemesters: nextArchived });
+            setDeleteTargetSemester(null);
+            showToast(`보관된 '${targetName}' 기록이 영구 삭제되었습니다.`);
+          };
+
+          const openEditSessionModal = () => {
+            if (!isAdmin || !currentSession) return;
+            setEditSessionDate(currentSession.date || '');
+            setEditSessionTitle(currentSession.title || '');
+            setShowEditSessionModal(true);
+          };
+
+          const handleUpdateSessionInfo = (e) => {
+            e.preventDefault();
+            if (!isAdmin || !currentSession || !editSessionDate || !editSessionTitle.trim()) return;
+            updateCurrentSession((sess) => ({
+              ...sess,
+              date: editSessionDate,
+              title: editSessionTitle.trim(),
+            }));
+            setShowEditSessionModal(false);
+            showToast('정기전 회차 정보가 수정되었습니다.');
+          };
+
+          const updateCurrentSession = (updater) => {
+            if (!isAdmin) return;
+            const nextSessions = sessions.map((sess) =>
+              sess.id === currentSession.id ? updater(sess) : sess
+            );
+            setSessions(nextSessions);
+            syncClubStateToCloud({ sessions: nextSessions });
+          };
+
+          const handleCreateSession = (e) => {
+            e.preventDefault();
+            if (!isAdmin || !newSessionDate || !newSessionTitle.trim()) return;
+            const activeMembers = members.filter((m) => m.status !== 'dormant');
+            const newId = `s-${Date.now()}`;
+            const created = {
+              id: newId,
+              date: newSessionDate,
+              title: newSessionTitle.trim(),
+              gameFee: Number(newSessionGameFee) || 4500,
+              sidePotFee: Number(newSessionSidePot) || 0,
+              extraFund: 0,
+              lanes: createEmptyLanes(),
+              records: activeMembers.map((m) => ({
+                memberId: m.id,
+                scores: [0, 0],
+                shoeRental: false,
+              })),
+            };
+            const nextSessions = [...sessions, created];
+            setSessions(nextSessions);
+            setActiveSessionId(newId);
+            syncClubStateToCloud({ sessions: nextSessions });
+            setShowNewSessionModal(false);
+            setActiveTab('scores');
+            showToast(`${newSessionTitle.trim()} 회차가 추가되었습니다.`);
+          };
+
+          const handleConfirmDeleteSession = () => {
+            if (!isAdmin || !deleteTargetSession) return;
+            if (sessions.length <= 1) {
+              showToast('최소 1개의 정기전 회차는 유지되어야 합니다.');
+              setDeleteTargetSession(null);
+              return;
+            }
+            const targetId = deleteTargetSession.id;
+            const targetTitle = deleteTargetSession.title;
+            const remaining = sessions.filter((s) => s.id !== targetId);
+            const sortedRemaining = [...remaining].sort((a, b) => a.date.localeCompare(b.date));
+            setSessions(remaining);
+            if (activeSessionId === targetId && sortedRemaining.length > 0) {
+              setActiveSessionId(sortedRemaining[sortedRemaining.length - 1].id);
+            }
+            syncClubStateToCloud({ sessions: remaining });
+            setDeleteTargetSession(null);
+            showToast(`'${targetTitle}' 기록이 삭제되었습니다.`);
+          };
+
           const handleResetSemester = (e) => {
             e.preventDefault();
-            if (!isAdmin) return;
+            if (!isAdmin || !nextSemesterName.trim()) return;
             const trimmedNextName = nextSemesterName.trim();
-            if (!trimmedNextName) return;
-
             const archivedItem = {
               id: `sem-${Date.now()}`,
               name: currentSemesterName,
@@ -748,7 +965,6 @@
                 records: s.records.map((r) => ({ ...r, scores: [...r.scores] })),
               })),
             };
-
             const nextArchivedList = [archivedItem, ...archivedSemesters];
             setArchivedSemesters(nextArchivedList);
 
@@ -798,100 +1014,6 @@
             showToast(`'${archivedItem.name}' 기록이 보관되고 '${trimmedNextName}'가 시작되었습니다.`);
           };
 
-          // 정기전 회차 영구 삭제
-          const handleConfirmDeleteSession = () => {
-            if (!isAdmin || !deleteTargetSession) return;
-            if (sessions.length <= 1) {
-              showToast('최소 1개의 정기전 회차는 유지되어야 합니다.');
-              setDeleteTargetSession(null);
-              return;
-            }
-            const targetId = deleteTargetSession.id;
-            const targetTitle = deleteTargetSession.title;
-            const remaining = sessions.filter((s) => s.id !== targetId);
-            const sortedRemaining = [...remaining].sort((a, b) => a.date.localeCompare(b.date));
-
-            setSessions(remaining);
-            if (activeSessionId === targetId && sortedRemaining.length > 0) {
-              setActiveSessionId(sortedRemaining[sortedRemaining.length - 1].id);
-            }
-            syncClubStateToCloud({ sessions: remaining });
-            setDeleteTargetSession(null);
-            showToast(`'${targetTitle}' 회차가 삭제되었습니다.`);
-          };
-
-          // 보관된 이전 학기 아카이브 삭제
-          const handleConfirmDeleteSemester = () => {
-            if (role !== 'admin' || !deleteTargetSemester) return;
-            const targetId = deleteTargetSemester.id;
-            const targetName = deleteTargetSemester.name;
-            const nextArchived = archivedSemesters.filter((sem) => sem.id !== targetId);
-            setArchivedSemesters(nextArchived);
-            if (selectedSemesterId === targetId) {
-              setSelectedSemesterId('current');
-            }
-            syncClubStateToCloud({ archivedSemesters: nextArchived });
-            setDeleteTargetSemester(null);
-            showToast(`보관된 '${targetName}' 기록이 영구 삭제되었습니다.`);
-          };
-
-          const updateCurrentSession = (updater) => {
-            if (!isAdmin) return;
-            const nextSessions = sessions.map((sess) =>
-              sess.id === currentSession.id ? updater(sess) : sess
-            );
-            setSessions(nextSessions);
-            syncClubStateToCloud({ sessions: nextSessions });
-          };
-
-          const handleCreateSession = (e) => {
-            e.preventDefault();
-            if (!isAdmin || !newSessionDate || !newSessionTitle.trim()) return;
-            const activeMembers = members.filter((m) => m.status !== 'dormant');
-            const newId = `s-${Date.now()}`;
-            const created = {
-              id: newId,
-              date: newSessionDate,
-              title: newSessionTitle.trim(),
-              gameFee: Number(newSessionGameFee) || 4500,
-              sidePotFee: Number(newSessionSidePot) || 0,
-              extraFund: 0,
-              lanes: createEmptyLanes(),
-              records: activeMembers.map((m) => ({
-                memberId: m.id,
-                scores: [0, 0],
-                shoeRental: false,
-              })),
-            };
-            const nextSessions = [...sessions, created];
-            setSessions(nextSessions);
-            setActiveSessionId(newId);
-            syncClubStateToCloud({ sessions: nextSessions });
-            setShowNewSessionModal(false);
-            setActiveTab('scores');
-            showToast(`${newSessionTitle.trim()} 회차가 추가되었습니다.`);
-          };
-
-          const openEditSessionModal = () => {
-            if (!isAdmin || !currentSession) return;
-            setEditSessionDate(currentSession.date || '');
-            setEditSessionTitle(currentSession.title || '');
-            setShowEditSessionModal(true);
-          };
-
-          const handleEditSessionSubmit = (e) => {
-            e.preventDefault();
-            if (!isAdmin || !editSessionDate || !editSessionTitle.trim()) return;
-            const trimmedTitle = editSessionTitle.trim();
-            updateCurrentSession((sess) => ({
-              ...sess,
-              date: editSessionDate,
-              title: trimmedTitle,
-            }));
-            setShowEditSessionModal(false);
-            showToast(`'${trimmedTitle}' 회차 정보가 수정되었습니다.`);
-          };
-
           const handleScoreChange = (memberId, gameIdx, value) => {
             if (!isAdmin) return;
             const numeric = value === '' ? 0 : Math.min(300, Math.max(0, Number(value)));
@@ -927,16 +1049,6 @@
             }));
           };
 
-          const toggleShoeRental = (memberId) => {
-            if (!isAdmin) return;
-            updateCurrentSession((sess) => ({
-              ...sess,
-              records: sess.records.map((rec) =>
-                rec.memberId === memberId ? { ...rec, shoeRental: !rec.shoeRental } : rec
-              ),
-            }));
-          };
-
           const toggleMemberInSession = (memberId) => {
             if (!isAdmin) return;
             const exists = currentSession.records.some((r) => r.memberId === memberId);
@@ -962,101 +1074,14 @@
             }
           };
 
-          const handleAddMember = (e) => {
-            e.preventDefault();
-            if (!isAdmin || !newMemberName.trim()) return;
-            const id = `m_${Date.now()}`;
-            const created = {
-              id,
-              name: newMemberIsGuest ? `${newMemberName.trim()}(게스트)` : newMemberName.trim(),
-              baseAvg: Number(newMemberAvg) || 150,
-              handicap: Number(newMemberHandicap) || 0,
-              isGuest: newMemberIsGuest,
-              status: 'active',
-            };
-            const nextMembers = [...members, created];
-            const nextSessions = sessions.map((sess) =>
-              sess.id === currentSession.id
-                ? {
-                    ...sess,
-                    records: [...sess.records, { memberId: id, scores: [0, 0], shoeRental: false }],
-                  }
-                : sess
-            );
-            setMembers(nextMembers);
-            setSessions(nextSessions);
-            syncClubStateToCloud({ members: nextMembers, sessions: nextSessions });
-            setNewMemberName('');
-            setShowAddMember(false);
-            showToast(`${created.name} 회원이 등록되었습니다.`);
-          };
-
-          const updateMemberField = (memberId, field, value) => {
+          const toggleShoeRental = (memberId) => {
             if (!isAdmin) return;
-            const nextMembers = members.map((m) => (m.id === memberId ? { ...m, [field]: value } : m));
-            setMembers(nextMembers);
-            syncClubStateToCloud({ members: nextMembers });
-          };
-
-          const handleToggleDormantMember = (memberId) => {
-            if (!isAdmin) return;
-            const target = members.find((m) => m.id === memberId);
-            if (!target) return;
-            const nextStatus = target.status === 'dormant' ? 'active' : 'dormant';
-            const nextMembers = members.map((m) =>
-              m.id === memberId ? { ...m, status: nextStatus } : m
-            );
-            setMembers(nextMembers);
-
-            if (nextStatus === 'dormant') {
-              const nextSessions = sessions.map((sess) => {
-                if (sess.id !== currentSession.id) return sess;
-                const cleanedLanes = { ...createEmptyLanes(), ...(sess.lanes || {}) };
-                for (let i = 1; i <= TOTAL_LANES; i += 1) {
-                  cleanedLanes[i] = (cleanedLanes[i] || [null, null, null, null]).map((id) =>
-                    id === memberId ? null : id
-                  );
-                }
-                return {
-                  ...sess,
-                  lanes: cleanedLanes,
-                  records: sess.records.filter((r) => r.memberId !== memberId),
-                };
-              });
-              setSessions(nextSessions);
-              setTeams((prev) => prev.map((t) => t.filter((m) => m.id !== memberId)));
-              syncClubStateToCloud({ members: nextMembers, sessions: nextSessions });
-              showToast(`${target.name} 회원이 휴면 모드로 전환되었습니다.`);
-            } else {
-              syncClubStateToCloud({ members: nextMembers });
-              showToast(`${target.name} 회원이 활동중으로 복귀했습니다.`);
-            }
-          };
-
-          const handleConfirmDeleteMember = () => {
-            if (!isAdmin || !deleteTargetMember) return;
-            const targetId = deleteTargetMember.id;
-            const targetName = deleteTargetMember.name;
-            const nextMembers = members.filter((m) => m.id !== targetId);
-            const nextSessions = sessions.map((sess) => {
-              const cleanedLanes = { ...createEmptyLanes(), ...(sess.lanes || {}) };
-              for (let i = 1; i <= TOTAL_LANES; i += 1) {
-                cleanedLanes[i] = (cleanedLanes[i] || [null, null, null, null]).map((id) =>
-                  id === targetId ? null : id
-                );
-              }
-              return {
-                ...sess,
-                lanes: cleanedLanes,
-                records: sess.records.filter((r) => r.memberId !== targetId),
-              };
-            });
-            setMembers(nextMembers);
-            setSessions(nextSessions);
-            setTeams((prev) => prev.map((team) => team.filter((m) => m.id !== targetId)));
-            syncClubStateToCloud({ members: nextMembers, sessions: nextSessions });
-            setDeleteTargetMember(null);
-            showToast(`${targetName} 회원이 영구 삭제되었습니다.`);
+            updateCurrentSession((sess) => ({
+              ...sess,
+              records: sess.records.map((r) =>
+                r.memberId === memberId ? { ...r, shoeRental: !r.shoeRental } : r
+              ),
+            }));
           };
 
           // 레인 데이터 및 자동 배정
@@ -3697,282 +3722,47 @@
                       }),
                       pinChangeError && h('p', { className: 'text-xs text-rose-600' }, pinChangeError),
                       h('button', { type: 'submit', className: 'w-full py-2.5 rounded-xl bg-slate-900 text-white text-xs font-bold' }, '비밀번호 저장')
-                    )
-                  )
-                )
-              ),
-
-            // TOP 10 캡처 미리보기 모달
-            top10PreviewImage &&
-              h(
-                'div',
-                { className: 'fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4' },
-                h(
-                  'div',
-                  { className: 'w-full max-w-2xl bg-white border border-slate-200 rounded-3xl overflow-hidden shadow-2xl flex flex-col max-h-[90vh]' },
-                  h(
-                    'div',
-                    { className: 'px-5 py-3.5 border-b border-slate-200 flex items-center justify-between' },
-                    h('h3', { className: 'font-extrabold text-sm' }, '에버리지 TOP 10 캡처 이미지'),
-                    h('button', { type: 'button', onClick: () => setTop10PreviewImage(null), className: 'p-1.5 rounded-lg text-slate-400' }, Icons.X('w-5 h-5'))
-                  ),
-                  h(
-                    'div',
-                    { className: 'p-4 overflow-y-auto bg-slate-50 flex justify-center' },
-                    h('img', { src: top10PreviewImage, alt: 'TOP 10 순위표', className: 'max-w-full h-auto rounded-xl border border-slate-200' })
-                  ),
-                  h(
-                    'div',
-                    { className: 'px-5 py-3.5 border-t border-slate-200 flex justify-end gap-2' },
-                    h('button', { type: 'button', onClick: () => setTop10PreviewImage(null), className: 'px-4 py-2 rounded-xl bg-slate-100 text-xs font-bold' }, '닫기'),
-                    h(
-                      'a',
-                      {
-                        href: top10PreviewImage,
-                        download: `KOBO_TOP10_${currentSession?.date || 'rank'}.png`,
-                        className: 'inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-blue-600 text-white font-extrabold text-xs',
-                      },
-                      Icons.Download('w-3.5 h-3.5'),
-                      ' PNG 이미지 저장'
-                    )
-                  )
-                )
-              ),
-
-            // 레인표 이미지 미리보기 모달
-            lanePreviewImage &&
-              h(
-                'div',
-                { className: 'fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4' },
-                h(
-                  'div',
-                  { className: 'w-full max-w-2xl bg-white border border-slate-200 rounded-3xl overflow-hidden shadow-2xl flex flex-col max-h-[90vh]' },
-                  h(
-                    'div',
-                    { className: 'px-5 py-3.5 border-b border-slate-200 flex items-center justify-between' },
-                    h('h3', { className: 'font-extrabold text-sm' }, '레인 배정표 이미지 미리보기'),
-                    h('button', { type: 'button', onClick: () => setLanePreviewImage(null), className: 'p-1.5 rounded-lg text-slate-400' }, Icons.X('w-5 h-5'))
-                  ),
-                  h(
-                    'div',
-                    { className: 'p-4 overflow-y-auto bg-slate-50 flex justify-center' },
-                    h('img', { src: lanePreviewImage, alt: '레인 배정표', className: 'max-w-full h-auto rounded-xl border border-slate-200' })
-                  ),
-                  h(
-                    'div',
-                    { className: 'px-5 py-3.5 border-t border-slate-200 flex justify-end gap-2' },
-                    h('button', { type: 'button', onClick: () => setLanePreviewImage(null), className: 'px-4 py-2 rounded-xl bg-slate-100 text-xs font-bold' }, '닫기'),
-                    h(
-                      'a',
-                      {
-                        href: lanePreviewImage,
-                        download: `KOBO_레인배정표_${currentSession?.date || 'lane'}.png`,
-                        className: 'inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-blue-600 text-white font-extrabold text-xs',
-                      },
-                      Icons.Download('w-3.5 h-3.5'),
-                      ' PNG 이미지 저장'
-                    )
-                  )
-                )
-              ),
-
-            // 새 정기전 회차 생성 모달
-            isAdmin &&
-              showNewSessionModal &&
-              h(
-                'div',
-                { className: 'fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4' },
-                h(
-                  'form',
-                  { onSubmit: handleCreateSession, className: 'w-full max-w-sm bg-white border border-slate-200 rounded-3xl p-5 shadow-2xl space-y-3' },
-                  h('h3', { className: 'font-extrabold text-base' }, '새 정기전 회차 추가 (기본 2게임)'),
-                  h('input', {
-                    type: 'date',
-                    required: true,
-                    value: newSessionDate,
-                    onChange: (e) => setNewSessionDate(e.target.value),
-                    className: 'w-full px-3 py-2 rounded-xl border border-slate-200 text-xs font-bold',
-                  }),
-                  h('input', {
-                    type: 'text',
-                    required: true,
-                    placeholder: '회차 제목 (예: 제43회 정기전)',
-                    value: newSessionTitle,
-                    onChange: (e) => setNewSessionTitle(e.target.value),
-                    className: 'w-full px-3 py-2 rounded-xl border border-slate-200 text-xs font-bold',
-                  }),
-                  h(
-                    'div',
-                    { className: 'flex gap-2 pt-2' },
-                    h('button', { type: 'button', onClick: () => setShowNewSessionModal(false), className: 'flex-1 py-2.5 rounded-xl bg-slate-100 text-xs font-bold' }, '취소'),
-                    h('button', { type: 'submit', className: 'flex-1 py-2.5 rounded-xl bg-blue-600 text-white text-xs font-extrabold' }, '생성')
-                  )
-                )
-              ),
-
-            // 현재 정기전 회차 날짜·이름 수정 모달
-            isAdmin &&
-              showEditSessionModal &&
-              h(
-                'div',
-                { className: 'fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4' },
-                h(
-                  'form',
-                  { onSubmit: handleEditSessionSubmit, className: 'w-full max-w-sm bg-white border border-slate-200 rounded-3xl p-5 shadow-2xl space-y-3' },
-                  h(
-                    'div',
-                    { className: 'flex items-center justify-between' },
-                    h('h3', { className: 'font-extrabold text-base text-slate-900' }, '정기전 회차 정보 수정'),
-                    h('button', { type: 'button', onClick: () => setShowEditSessionModal(false), className: 'p-1 rounded-lg text-slate-400 hover:bg-slate-100' }, Icons.X('w-4 h-4'))
-                  ),
-                  h(
-                    'div',
-                    { className: 'space-y-1' },
-                    h('label', { className: 'text-[11px] font-bold text-slate-600 block' }, '정기전 날짜'),
-                    h('input', {
-                      type: 'date',
-                      required: true,
-                      value: editSessionDate,
-                      onChange: (e) => setEditSessionDate(e.target.value),
-                      className: 'w-full px-3 py-2 rounded-xl border border-slate-200 text-xs font-bold',
-                    })
-                  ),
-                  h(
-                    'div',
-                    { className: 'space-y-1' },
-                    h('label', { className: 'text-[11px] font-bold text-slate-600 block' }, '회차 이름'),
-                    h('input', {
-                      type: 'text',
-                      required: true,
-                      placeholder: '예: 제43회 정기전',
-                      value: editSessionTitle,
-                      onChange: (e) => setEditSessionTitle(e.target.value),
-                      className: 'w-full px-3 py-2 rounded-xl border border-slate-200 text-xs font-bold',
-                    })
-                  ),
-                  h(
-                    'div',
-                    { className: 'flex gap-2 pt-2' },
-                    h('button', { type: 'button', onClick: () => setShowEditSessionModal(false), className: 'flex-1 py-2.5 rounded-xl bg-slate-100 text-xs font-bold' }, '취소'),
-                    h('button', { type: 'submit', className: 'flex-1 py-2.5 rounded-xl bg-blue-600 text-white text-xs font-extrabold' }, '수정 저장')
-                  )
-                )
-              ),
-
-            // 신규 회원 등록 모달
-            isAdmin &&
-              showAddMember &&
-              h(
-                'div',
-                { className: 'fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4' },
-                h(
-                  'form',
-                  { onSubmit: handleAddMember, className: 'w-full max-w-sm bg-white border border-slate-200 rounded-3xl p-5 shadow-2xl space-y-3' },
-                  h('h3', { className: 'font-extrabold text-base' }, '신규 회원 등록'),
-                  h('input', {
-                    type: 'text',
-                    required: true,
-                    placeholder: '이름 입력',
-                    value: newMemberName,
-                    onChange: (e) => setNewMemberName(e.target.value),
-                    className: 'w-full px-3 py-2 rounded-xl border border-slate-200 text-xs font-bold',
-                  }),
-                  h(
-                    'div',
-                    { className: 'grid grid-cols-2 gap-2' },
-                    h('input', {
-                      type: 'number',
-                      placeholder: '기준 에버',
-                      value: newMemberAvg,
-                      onChange: (e) => setNewMemberAvg(e.target.value),
-                      className: 'w-full px-3 py-2 rounded-xl border border-slate-200 text-xs font-bold',
-                    }),
-                    h('input', {
-                      type: 'number',
-                      placeholder: '핸디캡',
-                      value: newMemberHandicap,
-                      onChange: (e) => setNewMemberHandicap(e.target.value),
-                      className: 'w-full px-3 py-2 rounded-xl border border-slate-200 text-xs font-bold',
-                    })
-                  ),
-                  h(
-                    'div',
-                    { className: 'flex gap-2 pt-2' },
-                    h('button', { type: 'button', onClick: () => setShowAddMember(false), className: 'flex-1 py-2.5 rounded-xl bg-slate-100 text-xs font-bold' }, '취소'),
-                    h('button', { type: 'submit', className: 'flex-1 py-2.5 rounded-xl bg-blue-600 text-white text-xs font-extrabold' }, '등록')
-                  )
-                )
-              ),
-
-            // 회원 영구 삭제 확인 모달
-            isAdmin &&
-              deleteTargetMember &&
-              h(
-                'div',
-                { className: 'fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4' },
-                h(
-                  'div',
-                  { className: 'w-full max-w-sm bg-white border border-slate-200 rounded-3xl p-5 shadow-2xl space-y-3' },
-                  h('h3', { className: 'font-extrabold text-base text-slate-900' }, `${deleteTargetMember.name} 회원 영구 삭제`),
-                  h(
-                    'p',
-                    { className: 'text-xs text-slate-600 leading-relaxed' },
-                    '영구 삭제 시 모든 정기전 점수, 레인표, 팀 기록에서 완전히 삭제됩니다. 기록을 남기려면 [휴면 전환]을 이용해주세요.'
-                  ),
-                  h(
-                    'div',
-                    { className: 'flex gap-2 pt-1' },
-                    h(
-                      'button',
-                      {
-                        type: 'button',
-                        onClick: () => setDeleteTargetMember(null),
-                        className: 'flex-1 py-2.5 rounded-xl bg-slate-100 text-slate-700 font-bold text-xs',
-                      },
-                      '취소'
                     ),
+                    // 다중 기기 실시간 동기화(Firebase) 연결 섹션
                     h(
-                      'button',
-                      {
-                        type: 'button',
-                        onClick: handleConfirmDeleteMember,
-                        className: 'flex-1 py-2.5 rounded-xl bg-rose-600 text-white font-extrabold text-xs',
-                      },
-                      '영구 삭제'
-                    )
-                  )
-                )
-              ),
-
-            // 레인 빈 슬롯 회원 배정 모달
-            isAdmin &&
-              assignModalTarget &&
-              h(
-                'div',
-                { className: 'fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4' },
-                h(
-                  'div',
-                  { className: 'w-full max-w-sm bg-white border border-slate-200 rounded-3xl p-5 shadow-2xl space-y-3' },
-                  h(
-                    'div',
-                    { className: 'flex items-center justify-between' },
-                    h('h3', { className: 'font-extrabold text-base' }, `${assignModalTarget.laneNum}레인 · ${assignModalTarget.slotIdx + 1}번 배정`),
-                    h('button', { type: 'button', onClick: () => setAssignModalTarget(null), className: 'p-1 rounded-lg text-slate-400' }, Icons.X('w-4 h-4'))
-                  ),
-                  h(
-                    'div',
-                    { className: 'max-h-60 overflow-y-auto divide-y divide-slate-100 border border-slate-200 rounded-2xl' },
-                    unassignedActiveMembers.map((m) =>
+                      'div',
+                      { className: 'space-y-2 pt-3 border-t border-slate-200' },
+                      h(
+                        'div',
+                        { className: 'flex items-center justify-between' },
+                        h('span', { className: 'text-xs font-extrabold text-slate-800' }, '다중 기기 실시간 동기화 (Firebase)'),
+                        h(
+                          'span',
+                          {
+                            className: `text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                              db && fbUser
+                                ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                                : 'bg-slate-100 text-slate-500 border border-slate-200'
+                            }`,
+                          },
+                          db && fbUser ? '🟢 실시간 연결됨' : '⚪ 로컬 저장 모드'
+                        )
+                      ),
+                      h(
+                        'p',
+                        { className: 'text-[11px] text-slate-500 leading-relaxed' },
+                        'Firebase 웹 앱 설정 코드(const firebaseConfig = { ... })를 그대로 붙여넣으면 폰과 PC 데이터가 실시간 동기화됩니다.'
+                      ),
+                      h('textarea', {
+                        rows: 4,
+                        value: externalFbInput,
+                        onChange: (e) => setExternalFbInput(e.target.value),
+                        placeholder: '{\n  "apiKey": "AIzaSy...",\n  "authDomain": "...",\n  "projectId": "..."\n}',
+                        className: 'w-full p-2.5 rounded-xl border border-slate-200 bg-slate-50 text-[11px] font-mono text-slate-800 outline-none focus:border-blue-500',
+                      }),
                       h(
                         'button',
                         {
-                          key: m.id,
                           type: 'button',
-                          onClick: () => handleAssignMemberToLaneSlot(assignModalTarget.laneNum, assignModalTarget.slotIdx, m.id),
-                          className: 'w-full px-3.5 py-2.5 flex items-center justify-between hover:bg-blue-50 text-left',
+                          onClick: handleSaveExternalFbConfig,
+                          className: 'w-full py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold',
                         },
-                        h('span', { className: 'font-bold text-sm' }, m.name),
-                        h('span', { className: 'text-xs font-extrabold text-blue-600' }, `에버 ${m.baseAvg}`)
+                        '동기화 설정 저장 및 연결'
                       )
                     )
                   )
@@ -4154,6 +3944,287 @@
                       className: 'w-full py-2.5 rounded-xl bg-blue-600 text-white font-bold text-xs',
                     },
                     '확인'
+                  )
+                )
+              ),
+
+            // 새 정기전 회차 생성 모달
+            isAdmin &&
+              showNewSessionModal &&
+              h(
+                'div',
+                { className: 'fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4' },
+                h(
+                  'form',
+                  { onSubmit: handleCreateSession, className: 'w-full max-w-sm bg-white border border-slate-200 rounded-3xl p-5 shadow-2xl space-y-3' },
+                  h(
+                    'div',
+                    { className: 'flex items-center justify-between' },
+                    h('h3', { className: 'font-extrabold text-base text-slate-900' }, '새 정기전 회차 추가'),
+                    h('button', { type: 'button', onClick: () => setShowNewSessionModal(false), className: 'p-1 rounded-lg text-slate-400' }, Icons.X('w-4 h-4'))
+                  ),
+                  h('input', {
+                    type: 'date',
+                    required: true,
+                    value: newSessionDate,
+                    onChange: (e) => setNewSessionDate(e.target.value),
+                    className: 'w-full px-3 py-2 rounded-xl border border-slate-200 text-xs font-bold',
+                  }),
+                  h('input', {
+                    type: 'text',
+                    required: true,
+                    placeholder: '회차 제목 (예: 제43회 정기전)',
+                    value: newSessionTitle,
+                    onChange: (e) => setNewSessionTitle(e.target.value),
+                    className: 'w-full px-3 py-2 rounded-xl border border-slate-200 text-xs font-bold',
+                  }),
+                  h(
+                    'div',
+                    { className: 'grid grid-cols-2 gap-2' },
+                    h('input', {
+                      type: 'number',
+                      placeholder: '1게임비',
+                      value: newSessionGameFee,
+                      onChange: (e) => setNewSessionGameFee(e.target.value),
+                      className: 'w-full px-3 py-2 rounded-xl border border-slate-200 text-xs font-bold',
+                    }),
+                    h('input', {
+                      type: 'number',
+                      placeholder: '대회/사이드비',
+                      value: newSessionSidePot,
+                      onChange: (e) => setNewSessionSidePot(e.target.value),
+                      className: 'w-full px-3 py-2 rounded-xl border border-slate-200 text-xs font-bold',
+                    })
+                  ),
+                  h(
+                    'div',
+                    { className: 'flex gap-2 pt-1' },
+                    h('button', { type: 'button', onClick: () => setShowNewSessionModal(false), className: 'flex-1 py-2.5 rounded-xl bg-slate-100 text-xs font-bold' }, '취소'),
+                    h('button', { type: 'submit', className: 'flex-1 py-2.5 rounded-xl bg-blue-600 text-white text-xs font-extrabold' }, '회차 생성')
+                  )
+                )
+              ),
+
+            // 정기전 회차 이름/날짜 수정 모달
+            isAdmin &&
+              showEditSessionModal &&
+              h(
+                'div',
+                { className: 'fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4' },
+                h(
+                  'form',
+                  { onSubmit: handleUpdateSessionInfo, className: 'w-full max-w-sm bg-white border border-slate-200 rounded-3xl p-5 shadow-2xl space-y-3' },
+                  h(
+                    'div',
+                    { className: 'flex items-center justify-between' },
+                    h('h3', { className: 'font-extrabold text-base text-slate-900' }, '정기전 회차 정보 수정'),
+                    h('button', { type: 'button', onClick: () => setShowEditSessionModal(false), className: 'p-1 rounded-lg text-slate-400' }, Icons.X('w-4 h-4'))
+                  ),
+                  h('input', {
+                    type: 'date',
+                    required: true,
+                    value: editSessionDate,
+                    onChange: (e) => setEditSessionDate(e.target.value),
+                    className: 'w-full px-3 py-2 rounded-xl border border-slate-200 text-xs font-bold',
+                  }),
+                  h('input', {
+                    type: 'text',
+                    required: true,
+                    placeholder: '회차 이름',
+                    value: editSessionTitle,
+                    onChange: (e) => setEditSessionTitle(e.target.value),
+                    className: 'w-full px-3 py-2 rounded-xl border border-slate-200 text-xs font-bold',
+                  }),
+                  h(
+                    'div',
+                    { className: 'flex gap-2 pt-1' },
+                    h('button', { type: 'button', onClick: () => setShowEditSessionModal(false), className: 'flex-1 py-2.5 rounded-xl bg-slate-100 text-xs font-bold' }, '취소'),
+                    h('button', { type: 'submit', className: 'flex-1 py-2.5 rounded-xl bg-blue-600 text-white text-xs font-extrabold' }, '수정 저장')
+                  )
+                )
+              ),
+
+            // 신규 회원 등록 모달
+            isAdmin &&
+              showAddMember &&
+              h(
+                'div',
+                { className: 'fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4' },
+                h(
+                  'form',
+                  { onSubmit: handleAddMember, className: 'w-full max-w-sm bg-white border border-slate-200 rounded-3xl p-5 shadow-2xl space-y-3' },
+                  h(
+                    'div',
+                    { className: 'flex items-center justify-between' },
+                    h('h3', { className: 'font-extrabold text-base text-slate-900' }, '신규 회원 / 게스트 등록'),
+                    h('button', { type: 'button', onClick: () => setShowAddMember(false), className: 'p-1 rounded-lg text-slate-400' }, Icons.X('w-4 h-4'))
+                  ),
+                  h('input', {
+                    type: 'text',
+                    required: true,
+                    placeholder: '회원 성명',
+                    value: newMemberName,
+                    onChange: (e) => setNewMemberName(e.target.value),
+                    className: 'w-full px-3 py-2 rounded-xl border border-slate-200 text-xs font-bold',
+                  }),
+                  h(
+                    'div',
+                    { className: 'grid grid-cols-2 gap-2' },
+                    h('input', {
+                      type: 'number',
+                      placeholder: '기준 에버리지',
+                      value: newMemberAvg,
+                      onChange: (e) => setNewMemberAvg(e.target.value),
+                      className: 'w-full px-3 py-2 rounded-xl border border-slate-200 text-xs font-bold',
+                    }),
+                    h('input', {
+                      type: 'number',
+                      placeholder: '핸디캡',
+                      value: newMemberHandicap,
+                      onChange: (e) => setNewMemberHandicap(e.target.value),
+                      className: 'w-full px-3 py-2 rounded-xl border border-slate-200 text-xs font-bold',
+                    })
+                  ),
+                  h(
+                    'label',
+                    { className: 'flex items-center gap-2 text-xs text-slate-700' },
+                    h('input', {
+                      type: 'checkbox',
+                      checked: newMemberIsGuest,
+                      onChange: (e) => setNewMemberIsGuest(e.target.checked),
+                    }),
+                    '게스트로 등록'
+                  ),
+                  h(
+                    'div',
+                    { className: 'flex gap-2 pt-1' },
+                    h('button', { type: 'button', onClick: () => setShowAddMember(false), className: 'flex-1 py-2.5 rounded-xl bg-slate-100 text-xs font-bold' }, '취소'),
+                    h('button', { type: 'submit', className: 'flex-1 py-2.5 rounded-xl bg-blue-600 text-white text-xs font-extrabold' }, '등록 완료')
+                  )
+                )
+              ),
+
+            // 회원 영구 삭제 확인 모달
+            isAdmin &&
+              deleteTargetMember &&
+              h(
+                'div',
+                { className: 'fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4' },
+                h(
+                  'div',
+                  { className: 'w-full max-w-sm bg-white border border-slate-200 rounded-3xl p-5 shadow-2xl space-y-3' },
+                  h('h3', { className: 'font-extrabold text-base text-slate-900' }, `${deleteTargetMember.name} 회원 영구 삭제`),
+                  h(
+                    'p',
+                    { className: 'text-xs text-slate-600 leading-relaxed' },
+                    '영구 삭제 시 모든 정기전 기록, 레인표, 팀 편성에서 완전히 삭제됩니다. 기록을 남기려면 휴면 전환을 이용하세요.'
+                  ),
+                  h(
+                    'div',
+                    { className: 'flex gap-2 pt-1' },
+                    h(
+                      'button',
+                      {
+                        type: 'button',
+                        onClick: () => setDeleteTargetMember(null),
+                        className: 'flex-1 py-2.5 rounded-xl bg-slate-100 text-slate-700 font-bold text-xs',
+                      },
+                      '취소'
+                    ),
+                    h(
+                      'button',
+                      {
+                        type: 'button',
+                        onClick: handleConfirmDeleteMember,
+                        className: 'flex-1 py-2.5 rounded-xl bg-rose-600 text-white font-extrabold text-xs',
+                      },
+                      '영구 삭제'
+                    )
+                  )
+                )
+              ),
+
+            // 레인 빈 슬롯 수동 배정 모달
+            isAdmin &&
+              assignModalTarget &&
+              h(
+                'div',
+                { className: 'fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4' },
+                h(
+                  'div',
+                  { className: 'w-full max-w-sm bg-white border border-slate-200 rounded-3xl p-5 shadow-2xl space-y-3' },
+                  h(
+                    'div',
+                    { className: 'flex items-center justify-between' },
+                    h('h3', { className: 'font-extrabold text-base' }, `${assignModalTarget.laneNum}레인 · ${assignModalTarget.slotIdx + 1}번 자리 배정`),
+                    h('button', { type: 'button', onClick: () => setAssignModalTarget(null), className: 'p-1 rounded-lg text-slate-400' }, Icons.X('w-4 h-4'))
+                  ),
+                  h(
+                    'div',
+                    { className: 'max-h-64 overflow-y-auto divide-y divide-slate-100 border border-slate-200 rounded-2xl' },
+                    unassignedActiveMembers.length === 0
+                      ? h('div', { className: 'p-6 text-center text-xs text-slate-400' }, '미배정된 활동중 회원이 없습니다.')
+                      : unassignedActiveMembers.map((m) =>
+                          h(
+                            'button',
+                            {
+                              key: m.id,
+                              type: 'button',
+                              onClick: () => handleAssignMemberToLaneSlot(assignModalTarget.laneNum, assignModalTarget.slotIdx, m.id),
+                              className: 'w-full px-3.5 py-2.5 flex items-center justify-between hover:bg-blue-50 text-left',
+                            },
+                            h('span', { className: 'font-bold text-sm' }, m.name),
+                            h('span', { className: 'text-xs font-extrabold text-blue-600' }, `에버 ${m.baseAvg}`)
+                          )
+                        )
+                  )
+                )
+              ),
+
+            // 레인 배정표 PNG 미리보기 모달
+            lanePreviewImage &&
+              h(
+                'div',
+                { className: 'fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4' },
+                h(
+                  'div',
+                  { className: 'w-full max-w-2xl bg-white border border-slate-200 rounded-3xl overflow-hidden shadow-2xl flex flex-col max-h-[90vh]' },
+                  h(
+                    'div',
+                    { className: 'px-5 py-3.5 border-b border-slate-200 flex items-center justify-between' },
+                    h('h3', { className: 'font-extrabold text-sm' }, '레인 배정표 이미지 미리보기'),
+                    h('button', { type: 'button', onClick: () => setLanePreviewImage(null), className: 'p-1.5 rounded-lg text-slate-400' }, Icons.X('w-5 h-5'))
+                  ),
+                  h('div', { className: 'p-4 overflow-y-auto bg-slate-50 flex justify-center' }, h('img', { src: lanePreviewImage, alt: '레인 배정표', className: 'max-w-full h-auto rounded-xl border border-slate-200' })),
+                  h(
+                    'div',
+                    { className: 'px-5 py-3.5 border-t border-slate-200 flex justify-end gap-2' },
+                    h('button', { type: 'button', onClick: () => setLanePreviewImage(null), className: 'px-4 py-2 rounded-xl bg-slate-100 text-xs font-bold' }, '닫기'),
+                    h('a', { href: lanePreviewImage, download: `KOBO_레인배정표_${currentSession?.date || 'lane'}.png`, className: 'px-4 py-2 rounded-xl bg-blue-600 text-white text-xs font-extrabold' }, 'PNG 저장')
+                  )
+                )
+              ),
+
+            // TOP 10 순위표 PNG 미리보기 모달
+            top10PreviewImage &&
+              h(
+                'div',
+                { className: 'fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4' },
+                h(
+                  'div',
+                  { className: 'w-full max-w-xl bg-white border border-slate-200 rounded-3xl overflow-hidden shadow-2xl flex flex-col max-h-[90vh]' },
+                  h(
+                    'div',
+                    { className: 'px-5 py-3.5 border-b border-slate-200 flex items-center justify-between' },
+                    h('h3', { className: 'font-extrabold text-sm' }, `${currentSession?.title} TOP 10 순위표 이미지`),
+                    h('button', { type: 'button', onClick: () => setTop10PreviewImage(null), className: 'p-1.5 rounded-lg text-slate-400' }, Icons.X('w-5 h-5'))
+                  ),
+                  h('div', { className: 'p-4 overflow-y-auto bg-slate-50 flex justify-center' }, h('img', { src: top10PreviewImage, alt: 'TOP 10 순위표', className: 'max-w-full h-auto rounded-xl border border-slate-200' })),
+                  h(
+                    'div',
+                    { className: 'px-5 py-3.5 border-t border-slate-200 flex justify-end gap-2' },
+                    h('button', { type: 'button', onClick: () => setTop10PreviewImage(null), className: 'px-4 py-2 rounded-xl bg-slate-100 text-xs font-bold' }, '닫기'),
+                    h('a', { href: top10PreviewImage, download: `KOBO_TOP10_${currentSession?.date || 'rank'}.png`, className: 'px-4 py-2 rounded-xl bg-blue-600 text-white text-xs font-extrabold' }, 'PNG 저장')
                   )
                 )
               )
