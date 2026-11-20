@@ -425,15 +425,20 @@
                   if (appleLink) appleLink.setAttribute('href', iconUrl);
 
                   const manifest = {
-                    name: 'KOBO 볼링 클럽',
+                    id: './',
+                    name: 'KOBO',
                     short_name: 'KOBO',
-                    start_url: window.location.href,
+                    description: 'KOBO 정기전 기록, 레인표 및 자동 정산',
+                    start_url: './',
+                    scope: './',
                     display: 'standalone',
+                    orientation: 'portrait',
                     background_color: '#FFFFFF',
                     theme_color: '#FFFFFF',
                     icons: [
-                      { src: iconUrl, sizes: '192x192', type: 'image/png' },
-                      { src: iconUrl, sizes: '512x512', type: 'image/png' },
+                      { src: iconUrl, sizes: '192x192', type: 'image/png', purpose: 'any' },
+                      { src: iconUrl, sizes: '512x512', type: 'image/png', purpose: 'any' },
+                      { src: iconUrl, sizes: '512x512', type: 'image/png', purpose: 'maskable' },
                     ],
                   };
                   const manifestBlob = new Blob([JSON.stringify(manifest)], {
@@ -443,6 +448,16 @@
                   const manifestLink = document.getElementById('pwa-manifest-link');
                   if (manifestLink) manifestLink.setAttribute('href', manifestUrl);
                 };
+
+                if ('serviceWorker' in navigator && window.isSecureContext) {
+                  const swCode =
+                    "self.addEventListener('install',e=>self.skipWaiting());" +
+                    "self.addEventListener('activate',e=>e.waitUntil(self.clients.claim()));" +
+                    "self.addEventListener('fetch',e=>{});";
+                  const swBlob = new Blob([swCode], { type: 'application/javascript' });
+                  const swUrl = URL.createObjectURL(swBlob);
+                  navigator.serviceWorker.register(swUrl).catch(() => {});
+                }
 
                 if (clubLogo) {
                   const img = new Image();
