@@ -11,7 +11,10 @@
     <meta name="apple-mobile-web-app-title" content="KOBO" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <meta name="theme-color" content="#FFFFFF" />
+    <link id="pwa-manifest-link" rel="manifest" href="" />
+    <link id="apple-touch-icon-link" rel="apple-touch-icon" href="" />
     <script src="https://cdn.tailwindcss.com"></script>
     <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
@@ -23,6 +26,13 @@
         font-family: -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Pretendard",
           "Noto Sans KR", sans-serif;
         -webkit-tap-highlight-color: transparent;
+        overflow-x: hidden;
+        word-break: keep-all;
+      }
+      @media (max-width: 380px) {
+        html {
+          font-size: 14.5px;
+        }
       }
     </style>
   </head>
@@ -273,6 +283,7 @@
 
         function App() {
           const [fbUser, setFbUser] = useState(null);
+          const [cloudStatus, setCloudStatus] = useState('connecting');
           const [role, setRole] = useState(null);
           const [adminPin, setAdminPin] = useState(DEFAULT_ADMIN_PIN);
           const [pinInput, setPinInput] = useState('');
@@ -361,9 +372,101 @@
           const [toastMessage, setToastMessage] = useState('');
           const [manualTextModal, setManualTextModal] = useState(null);
 
+          // PWA 앱 설치 프롬프트 및 안내 상태
+          const [deferredInstallPrompt, setDeferredInstallPrompt] = useState(null);
+          const [showInstallGuideModal, setShowInstallGuideModal] = useState(false);
+          const [isStandaloneApp, setIsStandaloneApp] = useState(false);
+
           const showToast = (msg) => {
             setToastMessage(msg);
             setTimeout(() => setToastMessage(''), 2600);
+          };
+
+          // PWA Manifest, 아이콘 동적 생성 및 앱 설치 이벤트 감지
+          useEffect(() => {
+            const checkStandalone =
+              window.matchMedia('(display-mode: standalone)').matches ||
+              window.navigator.standalone === true;
+            setIsStandaloneApp(checkStandalone);
+
+            const handleBeforeInstall = (e) => {
+              e.preventDefault();
+              setDeferredInstallPrompt(e);
+            };
+            window.addEventListener('beforeinstallprompt', handleBeforeInstall);
+            return () => window.removeEventListener('beforeinstallprompt', handleBeforeInstall);
+          }, []);
+
+          useEffect(() => {
+            try {
+              const iconCanvas = document.createElement('canvas');
+              iconCanvas.width = 512;
+              iconCanvas.height = 512;
+              const ctx = iconCanvas.getContext('2d');
+              if (ctx) {
+                const drawIcon = (imgObj) => {
+                  ctx.fillStyle = '#1D4ED8';
+                  ctx.fillRect(0, 0, 512, 512);
+                  if (imgObj) {
+                    ctx.drawImage(imgObj, 0, 0, 512, 512);
+                  } else {
+                    const grad = ctx.createLinearGradient(0, 0, 512, 512);
+                    grad.addColorStop(0, '#2563EB');
+                    grad.addColorStop(1, '#312E81');
+                    ctx.fillStyle = grad;
+                    ctx.fillRect(0, 0, 512, 512);
+                    ctx.font = '240px sans-serif';
+                    ctx.textAlign = 'center';
+                    ctx.textBaseline = 'middle';
+                    ctx.fillText('🎳', 256, 268);
+                  }
+                  const iconUrl = iconCanvas.toDataURL('image/png');
+                  const appleLink = document.getElementById('apple-touch-icon-link');
+                  if (appleLink) appleLink.setAttribute('href', iconUrl);
+
+                  const manifest = {
+                    name: 'KOBO 볼링 클럽',
+                    short_name: 'KOBO',
+                    start_url: window.location.href,
+                    display: 'standalone',
+                    background_color: '#FFFFFF',
+                    theme_color: '#FFFFFF',
+                    icons: [
+                      { src: iconUrl, sizes: '192x192', type: 'image/png' },
+                      { src: iconUrl, sizes: '512x512', type: 'image/png' },
+                    ],
+                  };
+                  const manifestBlob = new Blob([JSON.stringify(manifest)], {
+                    type: 'application/manifest+json',
+                  });
+                  const manifestUrl = URL.createObjectURL(manifestBlob);
+                  const manifestLink = document.getElementById('pwa-manifest-link');
+                  if (manifestLink) manifestLink.setAttribute('href', manifestUrl);
+                };
+
+                if (clubLogo) {
+                  const img = new Image();
+                  img.onload = () => drawIcon(img);
+                  img.onerror = () => drawIcon(null);
+                  img.src = clubLogo;
+                } else {
+                  drawIcon(null);
+                }
+              }
+            } catch (err) {}
+          }, [clubLogo]);
+
+          const handleTriggerAppInstall = async () => {
+            if (deferredInstallPrompt) {
+              deferredInstallPrompt.prompt();
+              const choice = await deferredInstallPrompt.userChoice;
+              if (choice && choice.outcome === 'accepted') {
+                showToast('KOBO 앱 설치가 시작되었습니다!');
+              }
+              setDeferredInstallPrompt(null);
+            } else {
+              setShowInstallGuideModal(true);
+            }
           };
 
           const applyPayload = (data) => {
@@ -396,8 +499,15 @@
               if (raw) applyPayload(JSON.parse(raw));
             } catch (err) {}
 
-            if (!auth || !db) return;
-            auth.signInAnonymously().catch(() => {});
+            if (!auth || !db) {
+              setCloudStatus('offline');
+              return;
+            }
+            auth
+              .signInAnonymously()
+              .catch(() => {
+                setCloudStatus('auth-error');
+              });
             const unsub = auth.onAuthStateChanged((u) => setFbUser(u));
             return () => unsub();
           }, []);
@@ -407,10 +517,15 @@
             const ref = db.collection('artifacts').doc(appId).collection('public').doc('data').collection('club_state').doc('main');
             const unsub = ref.onSnapshot(
               (snap) => {
-                if (snap.exists) applyPayload(snap.data());
+                setCloudStatus('connected');
+                if (snap.exists) {
+                  applyPayload(snap.data());
+                } else {
+                  syncClubStateToCloud();
+                }
               },
               () => {
-                // Firestore 권한 제한(permission-denied) 시 미처리 예외를 방지하고 로컬 저장소 모드로 폴백
+                setCloudStatus('rule-error');
                 db = null;
               }
             );
@@ -1889,8 +2004,65 @@
                     ),
                     Icons.ChevronRight('w-5 h-5 text-white/80 shrink-0')
                   )
-                )
+                ),
+                !isStandaloneApp &&
+                  h(
+                    'div',
+                    { className: 'mt-5 pt-4 border-t border-slate-100' },
+                    h(
+                      'button',
+                      {
+                        type: 'button',
+                        onClick: handleTriggerAppInstall,
+                        className: 'w-full py-3 px-4 rounded-2xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-extrabold flex items-center justify-center gap-2 shadow-sm',
+                      },
+                      Icons.Download('w-4 h-4 text-blue-400'),
+                      '📱 스마트폰에 KOBO 앱으로 설치하기'
+                    )
+                  )
               ),
+              showInstallGuideModal &&
+                h(
+                  'div',
+                  { className: 'fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4' },
+                  h(
+                    'div',
+                    { className: 'w-full max-w-sm bg-white border border-slate-200 rounded-3xl p-5 shadow-2xl space-y-3.5 text-slate-900' },
+                    h(
+                      'div',
+                      { className: 'flex items-center justify-between' },
+                      h('h3', { className: 'font-black text-base' }, '📱 KOBO 앱 설치 안내'),
+                      h('button', { type: 'button', onClick: () => setShowInstallGuideModal(false), className: 'p-1.5 rounded-lg text-slate-400 hover:bg-slate-100' }, Icons.X('w-4 h-4'))
+                    ),
+                    h(
+                      'div',
+                      { className: 'space-y-2.5 text-xs text-slate-600 leading-relaxed' },
+                      h(
+                        'div',
+                        { className: 'p-3 rounded-2xl bg-blue-50/70 border border-blue-100' },
+                        h('div', { className: 'font-extrabold text-blue-900 mb-1' }, '🍎 아이폰 (Safari 브라우저)'),
+                        h('p', null, '1. 하단 가운데 [공유 버튼 ⬆️] 누르기'),
+                        h('p', null, '2. 아래로 내려 [홈 화면에 추가] 선택 후 [추가]')
+                      ),
+                      h(
+                        'div',
+                        { className: 'p-3 rounded-2xl bg-emerald-50/70 border border-emerald-100' },
+                        h('div', { className: 'font-extrabold text-emerald-900 mb-1' }, '🤖 갤럭시 / 안드로이드 (Chrome·삼성인터넷)'),
+                        h('p', null, '1. 우측 상단 또는 하단 [메뉴 ⋮ / ≡] 누르기'),
+                        h('p', null, '2. [앱 설치] 또는 [현재 페이지 추가 → 홈 화면] 선택')
+                      )
+                    ),
+                    h(
+                      'button',
+                      {
+                        type: 'button',
+                        onClick: () => setShowInstallGuideModal(false),
+                        className: 'w-full py-2.5 rounded-xl bg-blue-600 text-white font-bold text-xs',
+                      },
+                      '확인'
+                    )
+                  )
+                ),
               showPinModal &&
                 h(
                   'div',
@@ -1931,10 +2103,10 @@
               { className: 'sticky top-0 z-30 bg-white/95 backdrop-blur-md border-b border-slate-200 shadow-2xs' },
               h(
                 'div',
-                { className: 'max-w-4xl mx-auto px-4 py-3 flex items-center justify-between gap-2' },
+                { className: 'max-w-4xl mx-auto px-3 sm:px-4 py-2.5 flex items-center justify-between gap-2' },
                 h(
                   'div',
-                  { className: 'flex items-center gap-2.5 min-w-0' },
+                  { className: 'flex items-center gap-2 min-w-0 flex-1' },
                   clubLogo
                     ? h('img', {
                         src: clubLogo,
@@ -1948,24 +2120,31 @@
                       ),
                   h(
                     'div',
-                    { className: 'min-w-0' },
+                    { className: 'min-w-0 flex-1' },
                     h(
                       'div',
-                      { className: 'flex items-center gap-1.5' },
-                      h('h1', { className: 'font-black text-base tracking-tight text-slate-900 truncate' }, 'KOBO'),
+                      { className: 'flex items-center gap-1.5 flex-wrap' },
+                      h('h1', { className: 'font-black text-base tracking-tight text-slate-900' }, 'KOBO'),
                       isAdmin
                         ? h(
                             'span',
-                            { className: 'inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200 shrink-0' },
+                            { className: 'inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200 shrink-0 whitespace-nowrap' },
                             Icons.Unlock('w-3 h-3'),
                             ' 임원진'
                           )
                         : h(
                             'span',
-                            { className: 'inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 border border-slate-200 shrink-0' },
+                            { className: 'inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 border border-slate-200 shrink-0 whitespace-nowrap' },
                             Icons.Eye('w-3 h-3'),
                             ' 회원'
-                          )
+                          ),
+                      cloudStatus === 'connected'
+                        ? h('span', { className: 'text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 shrink-0 whitespace-nowrap' }, '🟢 동기화됨')
+                        : cloudStatus === 'auth-error'
+                        ? h('span', { className: 'text-[10px] font-bold px-2 py-0.5 rounded-full bg-rose-50 text-rose-700 border border-rose-200 shrink-0 whitespace-nowrap' }, '🔴 익명로그인 꺼짐')
+                        : cloudStatus === 'rule-error'
+                        ? h('span', { className: 'text-[10px] font-bold px-2 py-0.5 rounded-full bg-rose-50 text-rose-700 border border-rose-200 shrink-0 whitespace-nowrap' }, '🔴 DB규칙 차단')
+                        : null
                     ),
                     h('p', { className: 'text-[11px] text-slate-500 truncate' }, `${currentSession?.date || ''} · ${currentSession?.title || ''}`)
                   )
@@ -1973,6 +2152,18 @@
                 h(
                   'div',
                   { className: 'flex items-center gap-1.5 shrink-0' },
+                  !isStandaloneApp &&
+                    h(
+                      'button',
+                      {
+                        type: 'button',
+                        onClick: handleTriggerAppInstall,
+                        title: '앱으로 설치',
+                        className: 'text-[11px] font-bold px-2.5 py-1.5 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 flex items-center gap-1 whitespace-nowrap',
+                      },
+                      Icons.Download('w-3.5 h-3.5'),
+                      h('span', null, '앱설치')
+                    ),
                   role === 'admin'
                     ? [
                         h(
@@ -1981,10 +2172,10 @@
                             key: 'settings',
                             type: 'button',
                             onClick: () => setShowAdminSettingsModal(true),
-                            className: 'text-xs font-bold px-2.5 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 flex items-center gap-1',
+                            className: 'text-[11px] font-bold px-2.5 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 flex items-center gap-1 whitespace-nowrap',
                           },
                           Icons.Settings('w-3.5 h-3.5'),
-                          ' 설정'
+                          '설정'
                         ),
                         h(
                           'button',
@@ -1992,10 +2183,10 @@
                             key: 'logout',
                             type: 'button',
                             onClick: () => setRole(null),
-                            className: 'text-xs font-bold px-2.5 py-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 flex items-center gap-1',
+                            className: 'text-[11px] font-bold px-2.5 py-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 flex items-center gap-1 whitespace-nowrap',
                           },
                           Icons.LogOut('w-3.5 h-3.5'),
-                          ' 로그아웃'
+                          '로그아웃'
                         ),
                       ]
                     : h(
@@ -2007,34 +2198,34 @@
                             setPinError('');
                             setShowPinModal(true);
                           },
-                          className: 'text-xs font-bold px-3 py-1.5 rounded-xl bg-blue-600 text-white flex items-center gap-1',
+                          className: 'text-[11px] font-bold px-2.5 py-1.5 rounded-xl bg-blue-600 text-white flex items-center gap-1 whitespace-nowrap',
                         },
                         Icons.Lock('w-3.5 h-3.5'),
-                        ' 임원진'
+                        '임원진'
                       )
                 )
               ),
-              // 학기 선택기 + 정기전 회차 선택 바
+              // 학기 선택기 + 정기전 회차 선택 바 (모바일 줄바꿈·터치 최적화)
               h(
                 'div',
                 { className: 'bg-slate-50/80 border-t border-slate-100' },
                 h(
                   'div',
-                  { className: 'max-w-4xl mx-auto px-4 py-2 space-y-1.5' },
+                  { className: 'max-w-4xl mx-auto px-3 sm:px-4 py-2 space-y-2' },
                   // 1줄: 학기 선택 및 새 학기 초기화
                   h(
                     'div',
-                    { className: 'flex items-center justify-between gap-2' },
+                    { className: 'flex flex-wrap items-center justify-between gap-1.5' },
                     h(
                       'div',
-                      { className: 'flex items-center gap-1.5 flex-1 min-w-0' },
+                      { className: 'flex items-center gap-1.5 flex-1 min-w-[170px]' },
                       Icons.Archive('w-3.5 h-3.5 text-indigo-600 shrink-0'),
                       h(
                         'select',
                         {
                           value: selectedSemesterId,
                           onChange: (e) => setSelectedSemesterId(e.target.value),
-                          className: 'bg-white border border-slate-200 rounded-lg px-2 py-1 text-xs font-extrabold text-indigo-700 outline-none truncate max-w-[220px]',
+                          className: 'w-full bg-white border border-slate-200 rounded-xl px-2.5 py-1.5 text-xs font-extrabold text-indigo-700 outline-none truncate',
                         },
                         [
                           h('option', { key: 'current', value: 'current' }, `📚 ${currentSemesterName} (진행중)`),
@@ -2053,10 +2244,10 @@
                             setNextSemesterName('');
                             setShowResetSemesterModal(true);
                           },
-                          className: 'shrink-0 inline-flex items-center gap-1 text-[11px] font-bold px-2.5 py-1 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 whitespace-nowrap',
+                          className: 'shrink-0 inline-flex items-center gap-1 text-[11px] font-bold px-2.5 py-1.5 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 whitespace-nowrap',
                         },
                         Icons.RotateCcw('w-3 h-3'),
-                        ' 새 학기 초기화'
+                        '새 학기 초기화'
                       ),
                     role === 'admin' &&
                       isArchivedSemester &&
@@ -2066,16 +2257,16 @@
                         {
                           type: 'button',
                           onClick: () => setDeleteTargetSemester(activeArchivedSemester),
-                          className: 'shrink-0 inline-flex items-center gap-1 text-[11px] font-bold px-2.5 py-1 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 whitespace-nowrap',
+                          className: 'shrink-0 inline-flex items-center gap-1 text-[11px] font-bold px-2.5 py-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 whitespace-nowrap',
                         },
                         Icons.Trash2('w-3 h-3'),
-                        ' 이전 학기 삭제'
+                        '이전 학기 삭제'
                       )
                   ),
-                  // 2줄: 정기전 회차 선택 및 삭제 / 새 회차 생성
+                  // 2줄: 정기전 회차 선택 및 수정 / 삭제 / 새 회차 생성
                   h(
                     'div',
-                    { className: 'flex items-center justify-between gap-2' },
+                    { className: 'flex flex-col sm:flex-row sm:items-center justify-between gap-1.5' },
                     h(
                       'div',
                       { className: 'flex items-center gap-1.5 flex-1 min-w-0' },
@@ -2085,7 +2276,7 @@
                         {
                           value: currentSession?.id || '',
                           onChange: (e) => setActiveSessionId(e.target.value),
-                          className: 'bg-white border border-slate-200 rounded-lg px-2 py-1 text-xs font-bold text-slate-800 outline-none truncate max-w-[230px]',
+                          className: 'w-full bg-white border border-slate-200 rounded-xl px-2.5 py-1.5 text-xs font-bold text-slate-800 outline-none truncate',
                         },
                         [...sortedSessions].reverse().map((sess) =>
                           h('option', { key: sess.id, value: sess.id }, `${sess.date} · ${sess.title} (${sess.records.length}명)`)
@@ -2095,17 +2286,17 @@
                     isAdmin &&
                       h(
                         'div',
-                        { className: 'flex items-center gap-1.5 shrink-0' },
+                        { className: 'grid grid-cols-3 sm:flex items-center gap-1.5 shrink-0' },
                         currentSession &&
                           h(
                             'button',
                             {
                               type: 'button',
                               onClick: openEditSessionModal,
-                              className: 'inline-flex items-center gap-1 text-[11px] font-bold px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 whitespace-nowrap',
+                              className: 'inline-flex items-center justify-center gap-1 text-[11px] font-bold px-2.5 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 whitespace-nowrap',
                             },
                             Icons.Edit3('w-3 h-3'),
-                            ' 회차 수정'
+                            '회차 수정'
                           ),
                         sortedSessions.length > 1 &&
                           currentSession &&
@@ -2114,20 +2305,20 @@
                             {
                               type: 'button',
                               onClick: () => setDeleteTargetSession(currentSession),
-                              className: 'inline-flex items-center gap-1 text-[11px] font-bold px-2.5 py-1 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 whitespace-nowrap',
+                              className: 'inline-flex items-center justify-center gap-1 text-[11px] font-bold px-2.5 py-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 whitespace-nowrap',
                             },
                             Icons.Trash2('w-3 h-3'),
-                            ' 회차 삭제'
+                            '회차 삭제'
                           ),
                         h(
                           'button',
                           {
                             type: 'button',
                             onClick: () => setShowNewSessionModal(true),
-                            className: 'inline-flex items-center gap-1 text-[11px] font-bold px-2.5 py-1 rounded-lg bg-blue-600 text-white hover:bg-blue-700 whitespace-nowrap',
+                            className: 'inline-flex items-center justify-center gap-1 text-[11px] font-bold px-2.5 py-1.5 rounded-xl bg-blue-600 text-white hover:bg-blue-700 whitespace-nowrap',
                           },
                           Icons.FolderPlus('w-3 h-3'),
-                          ' 새 회차'
+                          '새 회차'
                         )
                       )
                   )
@@ -2604,16 +2795,16 @@
                     // 레인 필터 + 자동 배정(에버 균형 / 랜덤 / 팀별) 바
                     h(
                       'div',
-                      { className: 'pt-3 border-t border-slate-100 flex flex-wrap items-center justify-between gap-2' },
+                      { className: 'pt-3 border-t border-slate-100 space-y-2.5' },
                       h(
                         'div',
-                        { className: 'inline-flex rounded-xl bg-slate-100 p-1' },
+                        { className: 'grid grid-cols-2 sm:inline-flex rounded-xl bg-slate-100 p-1 gap-1' },
                         h(
                           'button',
                           {
                             type: 'button',
                             onClick: () => setLaneFilter('assigned'),
-                            className: `px-3 py-1 rounded-lg text-xs font-bold whitespace-nowrap ${
+                            className: `px-3 py-1.5 rounded-lg text-xs font-bold whitespace-nowrap ${
                               laneFilter === 'assigned' ? 'bg-white text-slate-900 shadow-2xs' : 'text-slate-500'
                             }`,
                           },
@@ -2624,7 +2815,7 @@
                           {
                             type: 'button',
                             onClick: () => setLaneFilter('all'),
-                            className: `px-3 py-1 rounded-lg text-xs font-bold whitespace-nowrap ${
+                            className: `px-3 py-1.5 rounded-lg text-xs font-bold whitespace-nowrap ${
                               laneFilter === 'all' ? 'bg-white text-slate-900 shadow-2xs' : 'text-slate-500'
                             }`,
                           },
@@ -2634,10 +2825,10 @@
                       isAdmin &&
                         h(
                           'div',
-                          { className: 'flex flex-wrap items-center gap-1.5' },
+                          { className: 'grid grid-cols-2 sm:flex sm:flex-wrap items-center gap-1.5' },
                           h(
                             'div',
-                            { className: 'flex items-center gap-1 bg-slate-50 border border-slate-200 rounded-xl px-2 py-1 text-xs' },
+                            { className: 'flex items-center justify-between gap-1 bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-1.5 text-xs' },
                             h('span', { className: 'text-slate-500 font-bold whitespace-nowrap' }, '시작레인'),
                             h('input', {
                               type: 'number',
@@ -2645,12 +2836,12 @@
                               max: 16,
                               value: startLaneNum,
                               onChange: (e) => setStartLaneNum(e.target.value),
-                              className: 'w-10 text-center font-black bg-white border border-slate-200 rounded py-0.5',
+                              className: 'w-12 text-center font-black bg-white border border-slate-200 rounded py-0.5',
                             })
                           ),
                           h(
                             'div',
-                            { className: 'flex items-center gap-1 bg-slate-50 border border-slate-200 rounded-xl px-2 py-1 text-xs' },
+                            { className: 'flex items-center justify-between gap-1 bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-1.5 text-xs' },
                             h('span', { className: 'text-slate-500 font-bold whitespace-nowrap' }, '레인 수'),
                             h('input', {
                               type: 'number',
@@ -2658,7 +2849,7 @@
                               max: 16,
                               value: targetLaneCount,
                               onChange: (e) => setTargetLaneCount(e.target.value),
-                              className: 'w-10 text-center font-black bg-white border border-slate-200 rounded py-0.5',
+                              className: 'w-12 text-center font-black bg-white border border-slate-200 rounded py-0.5',
                             })
                           ),
                           h(
@@ -2666,7 +2857,7 @@
                             {
                               value: laneAssignMode,
                               onChange: (e) => setLaneAssignMode(e.target.value),
-                              className: 'bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-1.5 text-xs font-bold text-slate-700',
+                              className: 'col-span-2 sm:col-span-1 bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-2 text-xs font-bold text-slate-700',
                             },
                             h('option', { value: 'balanced' }, '에버 균형 배정'),
                             h('option', { value: 'random' }, '랜덤 섞기 배정'),
@@ -2677,7 +2868,7 @@
                             {
                               type: 'button',
                               onClick: handleAutoAssignLanes,
-                              className: 'px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold whitespace-nowrap',
+                              className: 'px-3 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold whitespace-nowrap',
                             },
                             '빈칸 자동 배정'
                           ),
@@ -2686,7 +2877,7 @@
                             {
                               type: 'button',
                               onClick: handleClearAllLanes,
-                              className: 'px-2.5 py-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-600 text-xs font-bold whitespace-nowrap',
+                              className: 'px-2.5 py-2 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-600 text-xs font-bold whitespace-nowrap',
                             },
                             '초기화'
                           )
@@ -3520,39 +3711,44 @@
                     { className: 'bg-white border border-slate-200 rounded-3xl overflow-hidden shadow-2xs' },
                     h(
                       'div',
-                      { className: 'px-4 py-3 bg-slate-50 border-b border-slate-200 flex items-center justify-between' },
-                      h('h3', { className: 'font-black text-sm text-slate-900' }, '전체 이전 정기전 기록 이력'),
-                      h('span', { className: 'text-xs font-bold text-slate-500' }, `총 ${personalProfileData.allLogs.length}회 참가`)
+                      { className: 'px-4 py-3.5 bg-slate-50/80 border-b border-slate-200 flex items-center justify-between' },
+                      h('h3', { className: 'font-black text-sm text-slate-900' }, `전체 정기전 참가 이력 (${personalProfileData.allLogs.length}회)`),
+                      h('span', { className: 'text-[11px] font-bold text-slate-500' }, '이전 학기 기록 포함')
                     ),
                     personalProfileData.allLogs.length === 0
-                      ? h('div', { className: 'p-6 text-center text-xs text-slate-400' }, '참가 기록이 없습니다.')
+                      ? h('div', { className: 'p-8 text-center text-xs text-slate-400' }, '참가한 정기전 기록이 없습니다.')
                       : h(
                           'div',
                           { className: 'divide-y divide-slate-100' },
-                          [...personalProfileData.allLogs].reverse().map((log, i) =>
+                          [...personalProfileData.allLogs].reverse().map((log, idx) =>
                             h(
                               'div',
-                              { key: log.sessionId + i, className: 'px-4 py-3 flex items-center justify-between gap-2' },
+                              { key: `${log.sessionId}-${idx}`, className: 'px-4 py-3 flex items-center justify-between gap-2' },
                               h(
                                 'div',
                                 { className: 'min-w-0' },
                                 h(
                                   'div',
                                   { className: 'flex items-center gap-1.5 flex-wrap' },
-                                  h('span', { className: 'text-[10px] font-bold px-2 py-0.5 rounded bg-indigo-50 text-indigo-700' }, log.semesterName),
+                                  h(
+                                    'span',
+                                    { className: 'text-[10px] font-bold px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-200' },
+                                    log.semesterName
+                                  ),
                                   h('span', { className: 'font-extrabold text-xs text-slate-900' }, log.title),
                                   h('span', { className: 'text-[11px] text-slate-400' }, log.date)
                                 ),
                                 h(
                                   'div',
                                   { className: 'text-xs text-slate-600 mt-1 tabular-nums' },
-                                  `점수: ${log.scores.join(' · ')} (순수 에버 ${log.rawAvg} / 하이 ${log.highGame})`
+                                  `점수: ${log.scores.join(' · ')} (순수 에버 ${log.rawAvg} · 하이 ${log.highGame})`
                                 )
                               ),
                               h(
                                 'div',
                                 { className: 'text-right shrink-0' },
-                                h('span', { className: 'text-sm font-black text-blue-600 tabular-nums' }, `에버 ${log.finalAvg}`)
+                                h('div', { className: 'text-sm font-black text-blue-600 tabular-nums' }, `에버 ${log.finalAvg}`),
+                                h('div', { className: 'text-[10px] font-bold text-slate-400' }, `${log.gameCount}G`)
                               )
                             )
                           )
@@ -3561,20 +3757,20 @@
                 )
             ),
 
-            // 하단 고정 내비게이션 (회원: 4개 탭 / 임원진: 7개 탭)
+            // 하단 고정 내비게이션 (회원: 4개 탭 / 임원진: 7개 탭 · 모바일 겹침 방지)
             h(
               'nav',
-              { className: 'fixed bottom-0 inset-x-0 z-30 bg-white/95 backdrop-blur-md border-t border-slate-200' },
+              { className: 'fixed bottom-0 inset-x-0 z-30 bg-white/95 backdrop-blur-md border-t border-slate-200 pb-[env(safe-area-inset-bottom)]' },
               h(
                 'div',
                 {
-                  className: `max-w-4xl mx-auto px-2 py-1.5 grid gap-1 ${
+                  className: `max-w-4xl mx-auto px-1 sm:px-2 py-1.5 grid gap-0.5 sm:gap-1 ${
                     isAdmin ? 'grid-cols-7' : 'grid-cols-4'
                   }`,
                 },
                 (isAdmin
                   ? [
-                      { id: 'leaderboard', label: '기록/랭킹', icon: Icons.Trophy },
+                      { id: 'leaderboard', label: '랭킹', icon: Icons.Trophy },
                       { id: 'myRecord', label: '개인기록', icon: Icons.UserCheck },
                       { id: 'scores', label: '점수입력', icon: Icons.Edit3 },
                       { id: 'lanes', label: '레인표', icon: Icons.LayoutGrid },
@@ -3595,16 +3791,60 @@
                       key: tab.id,
                       type: 'button',
                       onClick: () => setActiveTab(tab.id),
-                      className: `flex flex-col items-center justify-center py-1.5 rounded-xl ${
+                      className: `flex flex-col items-center justify-center py-1.5 px-0.5 rounded-xl min-w-0 ${
                         activeTab === tab.id ? 'text-blue-600 bg-blue-50/80 font-extrabold' : 'text-slate-500 font-semibold'
                       }`,
                     },
-                    tab.icon('w-4 h-4 mb-0.5'),
-                    h('span', { className: 'text-[10px]' }, tab.label)
+                    tab.icon('w-4 h-4 mb-0.5 shrink-0'),
+                    h('span', { className: 'text-[10px] tracking-tighter leading-tight whitespace-nowrap truncate max-w-full' }, tab.label)
                   )
                 )
               )
             ),
+
+            // 앱 설치 안내 모달 (메인 화면용)
+            showInstallGuideModal &&
+              h(
+                'div',
+                { className: 'fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4' },
+                h(
+                  'div',
+                  { className: 'w-full max-w-sm bg-white border border-slate-200 rounded-3xl p-5 shadow-2xl space-y-3.5 text-slate-900' },
+                  h(
+                    'div',
+                    { className: 'flex items-center justify-between' },
+                    h('h3', { className: 'font-black text-base' }, '📱 KOBO 앱 설치 안내'),
+                    h('button', { type: 'button', onClick: () => setShowInstallGuideModal(false), className: 'p-1.5 rounded-lg text-slate-400 hover:bg-slate-100' }, Icons.X('w-4 h-4'))
+                  ),
+                  h(
+                    'div',
+                    { className: 'space-y-2.5 text-xs text-slate-600 leading-relaxed' },
+                    h(
+                      'div',
+                      { className: 'p-3 rounded-2xl bg-blue-50/70 border border-blue-100' },
+                      h('div', { className: 'font-extrabold text-blue-900 mb-1' }, '🍎 아이폰 (Safari 브라우저)'),
+                      h('p', null, '1. 하단 가운데 [공유 버튼 ⬆️] 누르기'),
+                      h('p', null, '2. 아래로 내려 [홈 화면에 추가] 선택 후 [추가]')
+                    ),
+                    h(
+                      'div',
+                      { className: 'p-3 rounded-2xl bg-emerald-50/70 border border-emerald-100' },
+                      h('div', { className: 'font-extrabold text-emerald-900 mb-1' }, '🤖 갤럭시 / 안드로이드 (Chrome·삼성인터넷)'),
+                      h('p', null, '1. 우측 상단 또는 하단 [메뉴 ⋮ / ≡] 누르기'),
+                      h('p', null, '2. [앱 설치] 또는 [현재 페이지 추가 → 홈 화면] 선택')
+                    )
+                  ),
+                  h(
+                    'button',
+                    {
+                      type: 'button',
+                      onClick: () => setShowInstallGuideModal(false),
+                      className: 'w-full py-2.5 rounded-xl bg-blue-600 text-white font-bold text-xs',
+                    },
+                    '확인'
+                  )
+                )
+              ),
 
             // 메인 화면 임원진 인증 모달 (회원 모드에서 임원진 버튼 클릭 시 표시)
             showPinModal &&
@@ -3763,6 +4003,18 @@
                           className: 'w-full py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold',
                         },
                         '동기화 설정 저장 및 연결'
+                      ),
+                      h(
+                        'button',
+                        {
+                          type: 'button',
+                          onClick: async () => {
+                            await syncClubStateToCloud();
+                            showToast('현재 기기의 데이터를 클라우드에 강제 업로드했습니다.');
+                          },
+                          className: 'w-full py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold',
+                        },
+                        '현재 기기 데이터를 클라우드로 강제 업로드'
                       )
                     )
                   )
