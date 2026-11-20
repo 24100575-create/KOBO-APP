@@ -405,59 +405,58 @@
               const ctx = iconCanvas.getContext('2d');
               if (ctx) {
                 const drawIcon = (imgObj) => {
-                  ctx.fillStyle = '#1D4ED8';
+                  // 안드로이드 원형/둥근사각 마스크 크롭에도 잘리지 않도록 외곽 안전 여백(Safe Zone 64%) 확보
+                  const grad = ctx.createLinearGradient(0, 0, 512, 512);
+                  grad.addColorStop(0, '#1E40AF');
+                  grad.addColorStop(1, '#312E81');
+                  ctx.fillStyle = grad;
                   ctx.fillRect(0, 0, 512, 512);
+
+                  const safeSize = 328;
+                  const offset = (512 - safeSize) / 2;
+
                   if (imgObj) {
-                    ctx.drawImage(imgObj, 0, 0, 512, 512);
+                    ctx.save();
+                    ctx.beginPath();
+                    ctx.arc(256, 256, safeSize / 2, 0, Math.PI * 2);
+                    ctx.closePath();
+                    ctx.clip();
+                    ctx.drawImage(imgObj, offset, offset, safeSize, safeSize);
+                    ctx.restore();
                   } else {
-                    const grad = ctx.createLinearGradient(0, 0, 512, 512);
-                    grad.addColorStop(0, '#2563EB');
-                    grad.addColorStop(1, '#312E81');
-                    ctx.fillStyle = grad;
-                    ctx.fillRect(0, 0, 512, 512);
-                    ctx.font = '240px sans-serif';
+                    ctx.font = '185px sans-serif';
                     ctx.textAlign = 'center';
                     ctx.textBaseline = 'middle';
-                    ctx.fillText('🎳', 256, 268);
+                    ctx.fillText('🎳', 256, 266);
                   }
+
                   const iconUrl = iconCanvas.toDataURL('image/png');
                   const appleLink = document.getElementById('apple-touch-icon-link');
                   if (appleLink) appleLink.setAttribute('href', iconUrl);
 
+                  const pageOriginUrl = window.location.origin + window.location.pathname;
                   const manifest = {
-                    id: './',
+                    id: pageOriginUrl,
                     name: 'KOBO',
                     short_name: 'KOBO',
                     description: 'KOBO 정기전 기록, 레인표 및 자동 정산',
-                    start_url: './',
-                    scope: './',
+                    start_url: pageOriginUrl,
+                    scope: window.location.origin + '/',
                     display: 'standalone',
                     orientation: 'portrait',
                     background_color: '#FFFFFF',
-                    theme_color: '#FFFFFF',
+                    theme_color: '#1E40AF',
                     icons: [
                       { src: iconUrl, sizes: '192x192', type: 'image/png', purpose: 'any' },
                       { src: iconUrl, sizes: '512x512', type: 'image/png', purpose: 'any' },
-                      { src: iconUrl, sizes: '512x512', type: 'image/png', purpose: 'maskable' },
                     ],
                   };
-                  const manifestBlob = new Blob([JSON.stringify(manifest)], {
-                    type: 'application/manifest+json',
-                  });
-                  const manifestUrl = URL.createObjectURL(manifestBlob);
+                  const manifestDataUrl =
+                    'data:application/manifest+json;charset=utf-8,' +
+                    encodeURIComponent(JSON.stringify(manifest));
                   const manifestLink = document.getElementById('pwa-manifest-link');
-                  if (manifestLink) manifestLink.setAttribute('href', manifestUrl);
+                  if (manifestLink) manifestLink.setAttribute('href', manifestDataUrl);
                 };
-
-                if ('serviceWorker' in navigator && window.isSecureContext) {
-                  const swCode =
-                    "self.addEventListener('install',e=>self.skipWaiting());" +
-                    "self.addEventListener('activate',e=>e.waitUntil(self.clients.claim()));" +
-                    "self.addEventListener('fetch',e=>{});";
-                  const swBlob = new Blob([swCode], { type: 'application/javascript' });
-                  const swUrl = URL.createObjectURL(swBlob);
-                  navigator.serviceWorker.register(swUrl).catch(() => {});
-                }
 
                 if (clubLogo) {
                   const img = new Image();
