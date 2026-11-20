@@ -13,8 +13,8 @@
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <meta name="theme-color" content="#FFFFFF" />
-    <link id="pwa-manifest-link" rel="manifest" href="" />
-    <link id="apple-touch-icon-link" rel="apple-touch-icon" href="" />
+    <link id="pwa-manifest-link" rel="manifest" href="./manifest.json" />
+    <link id="apple-touch-icon-link" rel="apple-touch-icon" href="./icon.png" />
     <script src="https://cdn.tailwindcss.com"></script>
     <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
@@ -384,89 +384,38 @@
 
           // PWA Manifest, 아이콘 동적 생성 및 앱 설치 이벤트 감지
           useEffect(() => {
-            const checkStandalone =
-              window.matchMedia('(display-mode: standalone)').matches ||
-              window.navigator.standalone === true;
-            setIsStandaloneApp(checkStandalone);
-
-            const handleBeforeInstall = (e) => {
-              e.preventDefault();
-              setDeferredInstallPrompt(e);
-            };
-            window.addEventListener('beforeinstallprompt', handleBeforeInstall);
-            return () => window.removeEventListener('beforeinstallprompt', handleBeforeInstall);
+            if ('serviceWorker' in navigator) {
+              navigator.serviceWorker.register('./sw.js').catch(() => {});
+            }
           }, []);
 
           useEffect(() => {
+            if (!clubLogo) return;
             try {
-              const iconCanvas = document.createElement('canvas');
-              iconCanvas.width = 512;
-              iconCanvas.height = 512;
-              const ctx = iconCanvas.getContext('2d');
-              if (ctx) {
-                const drawIcon = (imgObj) => {
-                  // 안드로이드 원형/둥근사각 마스크 크롭에도 잘리지 않도록 외곽 안전 여백(Safe Zone 64%) 확보
-                  const grad = ctx.createLinearGradient(0, 0, 512, 512);
-                  grad.addColorStop(0, '#1E40AF');
-                  grad.addColorStop(1, '#312E81');
-                  ctx.fillStyle = grad;
-                  ctx.fillRect(0, 0, 512, 512);
+              const appleLink = document.getElementById('apple-touch-icon-link');
+              if (appleLink) appleLink.setAttribute('href', clubLogo);
 
-                  const safeSize = 328;
-                  const offset = (512 - safeSize) / 2;
-
-                  if (imgObj) {
-                    ctx.save();
-                    ctx.beginPath();
-                    ctx.arc(256, 256, safeSize / 2, 0, Math.PI * 2);
-                    ctx.closePath();
-                    ctx.clip();
-                    ctx.drawImage(imgObj, offset, offset, safeSize, safeSize);
-                    ctx.restore();
-                  } else {
-                    ctx.font = '185px sans-serif';
-                    ctx.textAlign = 'center';
-                    ctx.textBaseline = 'middle';
-                    ctx.fillText('🎳', 256, 266);
-                  }
-
-                  const iconUrl = iconCanvas.toDataURL('image/png');
-                  const appleLink = document.getElementById('apple-touch-icon-link');
-                  if (appleLink) appleLink.setAttribute('href', iconUrl);
-
-                  const pageOriginUrl = window.location.origin + window.location.pathname;
-                  const manifest = {
-                    id: pageOriginUrl,
-                    name: 'KOBO',
-                    short_name: 'KOBO',
-                    description: 'KOBO 정기전 기록, 레인표 및 자동 정산',
-                    start_url: pageOriginUrl,
-                    scope: window.location.origin + '/',
-                    display: 'standalone',
-                    orientation: 'portrait',
-                    background_color: '#FFFFFF',
-                    theme_color: '#1E40AF',
-                    icons: [
-                      { src: iconUrl, sizes: '192x192', type: 'image/png', purpose: 'any' },
-                      { src: iconUrl, sizes: '512x512', type: 'image/png', purpose: 'any' },
-                    ],
-                  };
-                  const manifestDataUrl =
-                    'data:application/manifest+json;charset=utf-8,' +
-                    encodeURIComponent(JSON.stringify(manifest));
-                  const manifestLink = document.getElementById('pwa-manifest-link');
-                  if (manifestLink) manifestLink.setAttribute('href', manifestDataUrl);
-                };
-
-                if (clubLogo) {
-                  const img = new Image();
-                  img.onload = () => drawIcon(img);
-                  img.onerror = () => drawIcon(null);
-                  img.src = clubLogo;
-                } else {
-                  drawIcon(null);
-                }
-              }
+              const pageOriginUrl = window.location.origin + window.location.pathname;
+              const manifest = {
+                id: pageOriginUrl,
+                name: 'KOBO',
+                short_name: 'KOBO',
+                start_url: './',
+                scope: './',
+                display: 'standalone',
+                orientation: 'portrait',
+                background_color: '#FFFFFF',
+                theme_color: '#1E40AF',
+                icons: [
+                  { src: clubLogo, sizes: '192x192', type: 'image/png', purpose: 'any' },
+                  { src: clubLogo, sizes: '512x512', type: 'image/png', purpose: 'any' },
+                ],
+              };
+              const manifestDataUrl =
+                'data:application/manifest+json;charset=utf-8,' +
+                encodeURIComponent(JSON.stringify(manifest));
+              const manifestLink = document.getElementById('pwa-manifest-link');
+              if (manifestLink) manifestLink.setAttribute('href', manifestDataUrl);
             } catch (err) {}
           }, [clubLogo]);
 
