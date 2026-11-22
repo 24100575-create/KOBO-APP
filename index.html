@@ -986,6 +986,19 @@
             syncClubStateToCloud({ members: nextMembers });
           };
 
+          const handlePromoteGuestToMember = (memberId) => {
+            if (!isAdmin) return;
+            const target = members.find((m) => m.id === memberId);
+            if (!target || !target.isGuest) return;
+            const cleanName = target.name.replace(/\(게스트\)$/, '').trim();
+            const nextMembers = members.map((m) =>
+              m.id === memberId ? { ...m, name: cleanName, isGuest: false } : m
+            );
+            setMembers(nextMembers);
+            syncClubStateToCloud({ members: nextMembers });
+            showToast(`${cleanName}님이 정회원으로 전환되었습니다.`);
+          };
+
           const handleConfirmDeleteSemester = () => {
             if (role !== 'admin' || !deleteTargetSemester) return;
             const targetId = deleteTargetSemester.id;
@@ -3441,6 +3454,16 @@
                           h(
                             'div',
                             { className: 'flex flex-wrap items-center gap-1.5' },
+                            m.isGuest &&
+                              h(
+                                'button',
+                                {
+                                  type: 'button',
+                                  onClick: () => handlePromoteGuestToMember(m.id),
+                                  className: 'px-2.5 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs',
+                                },
+                                '정회원 전환'
+                              ),
                             st?.recommendUpgrade &&
                               h(
                                 'button',
