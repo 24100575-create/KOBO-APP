@@ -1245,8 +1245,13 @@
           }, [currentLanes]);
 
           const unassignedActiveMembers = useMemo(
-            () => effectiveMembers.filter((m) => m.status !== 'dormant' && !assignedMemberIds.has(m.id)),
-            [effectiveMembers, assignedMemberIds]
+            () => {
+              const joinedIds = new Set((currentSession?.records || []).map((r) => r.memberId));
+              return effectiveMembers
+                .filter((m) => joinedIds.has(m.id) && m.status !== 'dormant' && !assignedMemberIds.has(m.id))
+                .sort((a, b) => a.name.localeCompare(b.name, 'ko'));
+            },
+            [currentSession, effectiveMembers, assignedMemberIds]
           );
 
           const laneSummaries = useMemo(() => {
@@ -1296,10 +1301,13 @@
             }
 
             const remainingMembers = effectiveMembers.filter(
-              (m) => m.status !== 'dormant' && !alreadyAssignedSet.has(m.id)
+              (m) =>
+                (currentSession?.records || []).some((r) => r.memberId === m.id) &&
+                m.status !== 'dormant' &&
+                !alreadyAssignedSet.has(m.id)
             );
             if (remainingMembers.length === 0) {
-              showToast('이미 모든 활동 회원이 레인에 배정되어 있습니다.');
+              showToast('정기전 참석 인원이 모두 배정되었거나 선택된 참석 인원이 없습니다.');
               return;
             }
 
