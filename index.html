@@ -384,9 +384,33 @@
 
           // PWA Manifest, 아이콘 동적 생성 및 앱 설치 이벤트 감지
           useEffect(() => {
+            const checkStandalone = () => {
+              const standalone =
+                window.matchMedia('(display-mode: standalone)').matches ||
+                window.navigator.standalone === true;
+              setIsStandaloneApp(standalone);
+            };
+            checkStandalone();
+
             if ('serviceWorker' in navigator) {
-              navigator.serviceWorker.register('./sw.js').catch(() => {});
+              navigator.serviceWorker.register('./sw.js', { scope: './' }).catch(() => {});
             }
+
+            const onBeforeInstall = (e) => {
+              e.preventDefault();
+              setDeferredInstallPrompt(e);
+            };
+            const onAppInstalled = () => {
+              setDeferredInstallPrompt(null);
+              setIsStandaloneApp(true);
+            };
+
+            window.addEventListener('beforeinstallprompt', onBeforeInstall);
+            window.addEventListener('appinstalled', onAppInstalled);
+            return () => {
+              window.removeEventListener('beforeinstallprompt', onBeforeInstall);
+              window.removeEventListener('appinstalled', onAppInstalled);
+            };
           }, []);
 
           useEffect(() => {
