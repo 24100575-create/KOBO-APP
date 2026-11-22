@@ -871,15 +871,14 @@
             if (!isAdmin) return;
             const targetStat = allTimeStats.find((s) => s.id === memberId);
             const currentGames = targetStat ? targetStat.totalGames : 0;
-            const autoHandi = Math.max(0, Math.round((200 - newAvg) * 0.8));
             const nextMembers = members.map((m) =>
               m.id === memberId
-                ? { ...m, baseAvg: newAvg, handicap: autoHandi, avgAdjustedAtGames: currentGames }
+                ? { ...m, baseAvg: newAvg, avgAdjustedAtGames: currentGames }
                 : m
             );
             setMembers(nextMembers);
             syncClubStateToCloud({ members: nextMembers });
-            showToast(`기준 에버 ${newAvg}점(핸디 +${autoHandi})으로 ${directionLabel} 조정되었습니다.`);
+            showToast(`기준 에버 ${newAvg}점으로 ${directionLabel} 조정되었습니다. (핸디캡 유지)`);
           };
 
           const executeAddMember = () => {
