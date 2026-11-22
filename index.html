@@ -2684,6 +2684,7 @@
                         { className: 'pt-2 border-t border-slate-100 flex flex-wrap gap-1.5' },
                         members
                           .filter((m) => m.status !== 'dormant')
+                          .sort((a, b) => a.name.localeCompare(b.name, 'ko'))
                           .map((m) => {
                             const isJoined = currentSession?.records.some((r) => r.memberId === m.id);
                             return h(
