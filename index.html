@@ -354,7 +354,7 @@
 
           const [showAddMember, setShowAddMember] = useState(false);
           const [newMemberName, setNewMemberName] = useState('');
-          const [newMemberAvg, setNewMemberAvg] = useState(150);
+          const [newMemberAvg, setNewMemberAvg] = useState(100);
           const [newMemberHandicap, setNewMemberHandicap] = useState(0);
           const [newMemberIsGuest, setNewMemberIsGuest] = useState(false);
           const [duplicateMemberConfirm, setDuplicateMemberConfirm] = useState(null);
@@ -887,7 +887,7 @@
             const created = {
               id,
               name: newMemberIsGuest ? `${newMemberName.trim()}(게스트)` : newMemberName.trim(),
-              baseAvg: Number(newMemberAvg) || 150,
+              baseAvg: Number(newMemberAvg) || 100,
               handicap: Number(newMemberHandicap) || 0,
               isGuest: newMemberIsGuest,
               status: 'active',
@@ -905,7 +905,7 @@
             setSessions(nextSessions);
             syncClubStateToCloud({ members: nextMembers, sessions: nextSessions });
             setNewMemberName('');
-            setNewMemberAvg(150);
+            setNewMemberAvg(100);
             setNewMemberHandicap(0);
             setNewMemberIsGuest(false);
             setDuplicateMemberConfirm(null);
