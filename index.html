@@ -893,17 +893,8 @@
               status: 'active',
             };
             const nextMembers = [...members, created];
-            const nextSessions = sessions.map((sess) =>
-              sess.id === currentSession.id
-                ? {
-                    ...sess,
-                    records: [...sess.records, { memberId: id, scores: [0, 0], shoeRental: false }],
-                  }
-                : sess
-            );
             setMembers(nextMembers);
-            setSessions(nextSessions);
-            syncClubStateToCloud({ members: nextMembers, sessions: nextSessions });
+            syncClubStateToCloud({ members: nextMembers });
             setNewMemberName('');
             setNewMemberAvg(100);
             setNewMemberHandicap(0);
@@ -1038,7 +1029,6 @@
           const handleCreateSession = (e) => {
             e.preventDefault();
             if (!isAdmin || !newSessionDate || !newSessionTitle.trim()) return;
-            const activeMembers = members.filter((m) => m.status !== 'dormant');
             const newId = `s-${Date.now()}`;
             const created = {
               id: newId,
@@ -1048,11 +1038,7 @@
               sidePotFee: Number(newSessionSidePot) || 0,
               extraFund: 0,
               lanes: createEmptyLanes(),
-              records: activeMembers.map((m) => ({
-                memberId: m.id,
-                scores: [0, 0],
-                shoeRental: false,
-              })),
+              records: [],
             };
             const nextSessions = [...sessions, created];
             setSessions(nextSessions);
@@ -1124,11 +1110,7 @@
               sidePotFee: currentSession?.sidePotFee ?? 2000,
               extraFund: 0,
               lanes: createEmptyLanes(),
-              records: activeList.map((m) => ({
-                memberId: m.id,
-                scores: [0, 0],
-                shoeRental: false,
-              })),
+              records: [],
             };
 
             setCurrentSemesterName(trimmedNextName);
