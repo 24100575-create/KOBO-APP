@@ -7,6 +7,15 @@
       content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"
     />
     <title>KOBO</title>
+    <meta name="description" content="KOBO 정기전 기록, 레인표, 팀 편성 및 자동 정산" />
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="KOBO" />
+    <meta property="og:description" content="정기전 기록, 레인표, 팀 편성 및 자동 정산" />
+    <meta property="og:image" content="./icon.png" />
+    <meta name="twitter:card" content="summary" />
+    <meta name="twitter:title" content="KOBO" />
+    <meta name="twitter:description" content="정기전 기록, 레인표, 팀 편성 및 자동 정산" />
+    <meta name="twitter:image" content="./icon.png" />
     <meta name="application-name" content="KOBO" />
     <meta name="apple-mobile-web-app-title" content="KOBO" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
@@ -290,7 +299,8 @@
           const [pinError, setPinError] = useState('');
           const [showPinModal, setShowPinModal] = useState(false);
 
-          const [clubLogo, setClubLogo] = useState('');
+          const [clubLogo, setClubLogo] = useState('./icon.png');
+          const [logoLoadError, setLogoLoadError] = useState(false);
           const [duesAccount, setDuesAccount] = useState('');
           const [regularAccount, setRegularAccount] = useState('');
           const [presidentPhone, setPresidentPhone] = useState('');
@@ -461,7 +471,10 @@
             if (typeof data.adminPin === 'string' && /^\d{4,8}$/.test(data.adminPin)) {
               setAdminPin(data.adminPin);
             }
-            if (typeof data.clubLogo === 'string') setClubLogo(data.clubLogo);
+            if (typeof data.clubLogo === 'string' && data.clubLogo) {
+              setClubLogo(data.clubLogo);
+              setLogoLoadError(false);
+            }
             if (typeof data.duesAccount === 'string') setDuesAccount(data.duesAccount);
             if (typeof data.regularAccount === 'string') setRegularAccount(data.regularAccount);
             if (typeof data.presidentPhone === 'string') setPresidentPhone(data.presidentPhone);
@@ -1915,10 +1928,11 @@
                 h(
                   'div',
                   { className: 'flex flex-col items-center text-center mb-8' },
-                  clubLogo
+                  clubLogo && !logoLoadError
                     ? h('img', {
                         src: clubLogo,
                         alt: 'KOBO 로고',
+                        onError: () => setLogoLoadError(true),
                         className: 'w-16 h-16 rounded-2xl object-cover shadow-md border border-slate-200 mb-4',
                       })
                     : h(
@@ -2094,10 +2108,11 @@
                 h(
                   'div',
                   { className: 'flex items-center gap-2 min-w-0 flex-1' },
-                  clubLogo
+                  clubLogo && !logoLoadError
                     ? h('img', {
                         src: clubLogo,
                         alt: 'KOBO',
+                        onError: () => setLogoLoadError(true),
                         className: 'w-9 h-9 rounded-xl object-cover border border-slate-200 shrink-0',
                       })
                     : h(
@@ -3906,9 +3921,10 @@
                               {
                                 type: 'button',
                                 onClick: () => {
-                                  setClubLogo('');
+                                  setClubLogo('./icon.png');
+                                  setLogoLoadError(false);
                                   syncClubStateToCloud({ clubLogo: '' });
-                                  showToast('기본 로고로 초기화되었습니다.');
+                                  showToast('기본 로고(icon.png)로 초기화되었습니다.');
                                 },
                                 className: 'ml-2 text-xs font-bold text-rose-600',
                               },
