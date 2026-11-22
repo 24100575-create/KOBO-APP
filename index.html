@@ -8,14 +8,14 @@
     />
     <title>KOBO</title>
     <meta name="description" content="KOBO 정기전 기록, 레인표, 팀 편성 및 자동 정산" />
+    <meta property="og:site_name" content="KOBO" />
     <meta property="og:type" content="website" />
     <meta property="og:title" content="KOBO" />
     <meta property="og:description" content="정기전 기록, 레인표, 팀 편성 및 자동 정산" />
     <meta property="og:image" content="./icon.png" />
-    <meta name="twitter:card" content="summary" />
-    <meta name="twitter:title" content="KOBO" />
-    <meta name="twitter:description" content="정기전 기록, 레인표, 팀 편성 및 자동 정산" />
-    <meta name="twitter:image" content="./icon.png" />
+    <meta property="og:image:width" content="512" />
+    <meta property="og:image:height" content="512" />
+    <meta name="twitter:card" content="summary_large_image" />
     <meta name="application-name" content="KOBO" />
     <meta name="apple-mobile-web-app-title" content="KOBO" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
@@ -355,7 +355,7 @@
           const [showAddMember, setShowAddMember] = useState(false);
           const [newMemberName, setNewMemberName] = useState('');
           const [newMemberAvg, setNewMemberAvg] = useState(150);
-          const [newMemberHandicap, setNewMemberHandicap] = useState(30);
+          const [newMemberHandicap, setNewMemberHandicap] = useState(0);
           const [newMemberIsGuest, setNewMemberIsGuest] = useState(false);
 
           const [deleteTargetMember, setDeleteTargetMember] = useState(null);
@@ -907,7 +907,7 @@
             syncClubStateToCloud({ members: nextMembers, sessions: nextSessions });
             setNewMemberName('');
             setNewMemberAvg(150);
-            setNewMemberHandicap(30);
+            setNewMemberHandicap(0);
             setNewMemberIsGuest(false);
             setShowAddMember(false);
             showToast(`${created.name} 회원이 등록되었습니다.`);
